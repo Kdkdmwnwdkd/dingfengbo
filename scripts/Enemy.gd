@@ -95,7 +95,9 @@ func _ready() -> void:
 	_rng.seed = int(global_position.x * 1000.0) ^ int(global_position.z * 977.0) ^ 20261002
 	_wander_target = global_position
 	_player = get_tree().get_first_node_in_group("player")
-	_load_external_anims()
+	# 仅当模型自身无动画时才注入（同 Player.gd）
+	if anim and not anim.has_animation("Idle") and not anim.has_animation("idle"):
+		_load_external_anims()
 	_resolve_anims()
 	if anim and _a("idle") != "":
 		anim.play(_a("idle"))

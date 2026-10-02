@@ -7,9 +7,9 @@ extends WorldEnvironment
 ##   v2 修正：降低雾密度并抬高雾的起始高度、压暗地面、山体加冷调
 
 @export_group("光照")
-@export var sun_energy: float = 2.75
+@export var sun_energy: float = 3.8
 @export var sun_color: Color = Color(1.0, 0.851, 0.643)
-@export var ambient_energy: float = 0.30
+@export var ambient_energy: float = 0.62
 @export var ambient_color: Color = Color(0.243, 0.286, 0.353)
 
 @export_group("氛围")
@@ -74,7 +74,7 @@ func _setup_fog() -> void:
 ## ACES 色调映射 + 曝光压低 —— 70% 画面沉在暗部
 func _setup_tonemap() -> void:
 	_env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	_env.tonemap_exposure = 0.82
+	_env.tonemap_exposure = 1.18
 	_env.tonemap_white = 5.0
 
 func _setup_ssao() -> void:
@@ -126,8 +126,8 @@ func _setup_sun() -> void:
 	sun.shadow_bias = 0.035
 	sun.shadow_normal_bias = 1.2
 	sun.shadow_blur = 1.1
-	# 低角度侧逆光：竹叶和衣褶出现长投影
-	sun.rotation_degrees = Vector3(-38.0, 132.0, 0.0)
+	# 横版顺光：相机在 +Z，太阳也从 +Z 侧照向角色 → 角色正面受光，不再背光成黑影
+	sun.rotation_degrees = Vector3(-50.0, 20.0, 0.0)
 	add_child(sun)
 
 func get_sun_direction() -> Vector3:

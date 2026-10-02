@@ -9,12 +9,10 @@ extends Node3D
 @export var enemy_count: int = 3
 @export var random_seed: int = 20261002
 
-# 玩家/敌人模型：Asian_F_1_Casual（VALID 库写实亚洲女性，RPM 骨架）
-# 动画来自 RPM 女性动画库（assets/animations/，运行时注入，见 Player.gd）
-# 玩家月白罩色（白衣女侠）、敌人暗褐罩色（黑衣刺客）
-# 想换其他模型改这两行路径即可，动画名已自适应
-const PLAYER_CHARACTER_GLB := "res://assets/characters/Asian_F_1_Casual.glb"
-const ENEMY_CHARACTER_GLB := "res://assets/characters/Asian_F_1_Casual.glb"
+# 玩家/敌人模型：回退 RobotExpressive（three.js CC0，14动画含 Punch/Death，确定能跑）
+# Asian_F 女性角色动画注入有不确定性，先回退保证"能动能看见"，待用户提供古风女侠 glb 再换
+const PLAYER_CHARACTER_GLB := "res://assets/characters/RobotExpressive.glb"
+const ENEMY_CHARACTER_GLB := "res://assets/characters/RobotExpressive.glb"
 const OUTLINE_SHADER := "res://shaders/ink_outline.gdshader"
 const CHAR_SHADER := "res://shaders/ink_character.gdshader"
 
@@ -201,11 +199,13 @@ func _build_bamboo_field() -> void:
 
 # ---------------- 石头 ----------------
 func _build_rocks() -> void:
-	var rock_mesh := SphereMesh.new()
-	rock_mesh.radius = 1.0
-	rock_mesh.height = 1.2
-	rock_mesh.radial_segments = 6
-	rock_mesh.rings = 3
+	# 扁平多边形石头：CylinderMesh 压扁，低边数出硬棱角 —— 像水墨皴擦的块石，不是竖立的圆球
+	var rock_mesh := CylinderMesh.new()
+	rock_mesh.top_radius = 1.15
+	rock_mesh.bottom_radius = 1.35
+	rock_mesh.height = 0.62     # 扁：高度小于直径，平铺地面
+	rock_mesh.radial_segments = 5   # 五边形硬棱角
+	rock_mesh.rings = 2
 	rock_mesh.material = _mat_rock
 
 	var n := 46
@@ -215,16 +215,17 @@ func _build_rocks() -> void:
 	mm.instance_count = n
 
 	for i in n:
-		# 横卷撒点：点缀走道两侧与林带边缘，X 长条铺开
 		var px := _rng.randf_range(-120.0, 120.0)
 		var pz := _rng.randf_range(-30.0, 9.0)
 		if absf(pz) < LANE_HALF + 0.5:
 			pz = -signf(pz) * (LANE_HALF + 1.2)  # 走道内不放石头绊脚
-		var s := _rng.randf_range(0.22, 0.85)
+		var s := _rng.randf_range(0.35, 1.1)
 		var t := Transform3D()
-		t.origin = Vector3(px, s * _rng.randf_range(0.15, 0.42), pz)
+		# y 偏移让石头平贴地面：石头中心略高于 0
+		t.origin = Vector3(px, s * 0.18, pz)
 		t = t.rotated(Vector3.UP, _rng.randf_range(0.0, TAU))
-		t = t.scaled(Vector3(s * _rng.randf_range(0.8, 1.5), s * _rng.randf_range(0.5, 0.95), s * _rng.randf_range(0.8, 1.5)))
+		# scale y 压得更扁（0.4~0.7），保证是扁平石块不是竖立球
+		t = t.scaled(Vector3(s * _rng.randf_range(0.8, 1.4), s * _rng.randf_range(0.4, 0.7), s * _rng.randf_range(0.8, 1.4)))
 		mm.set_instance_transform(i, t)
 
 	var mmi := MultiMeshInstance3D.new()

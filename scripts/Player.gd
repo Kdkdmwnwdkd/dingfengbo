@@ -122,7 +122,10 @@ func _find_anim_player(n: Node) -> AnimationPlayer:
 func _ready() -> void:
 	add_to_group("player")
 	health = max_health
-	_load_external_anims()
+	# 仅当模型自身无动画时（如写实 RPM 女性角色）才从外部注入动画
+	# RobotExpressive 等自带动画的模型会跳过注入，避免轨道路径不匹配导致角色不动
+	if anim and not anim.has_animation("Idle") and not anim.has_animation("idle"):
+		_load_external_anims()
 	_resolve_anims()
 	_connect_animations()
 	if anim and _a("idle") != "":
