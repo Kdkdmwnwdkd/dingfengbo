@@ -13,11 +13,11 @@ env:
   PROJECT_PATH: .
 
 jobs:
-  # ============ 自检模式:无 Unity License 时跑 ============
+  # ============ 自检模式:无 Unity 账号时跑 ============
   selfcheck:
-    name: Self-check (no Unity license)
+    name: Self-check (no Unity account)
     runs-on: ubuntu-latest
-    if: ${{ !vars.UNITY_LICENSE && !secrets.UNITY_LICENSE }}
+    if: ${{ secrets.UNITY_EMAIL == '' || secrets.UNITY_PASSWORD == '' }}
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -30,76 +30,68 @@ jobs:
           echo ""
           echo "=== C# 脚本数 ==="
           find ./Assets -name "*.cs" | wc -l
-          echo ""
-          echo "=== ProjectVersion ==="
-          cat ProjectSettings/ProjectVersion.txt 2>/dev/null || echo "(missing)"
-          echo ""
-          echo "=== Packages ==="
-          cat Packages/manifest.json 2>/dev/null | head -40 || echo "(missing)"
 
-      - name: C# 语法自检(基础括号配对)
+      - name: C# 语法自检
         run: |
-          echo "=== C# 文件基础检查 ==="
+          echo "=== C# 大括号配对 ==="
           for f in $(find ./Assets -name "*.cs"); do
             opens=$(grep -c '{' "$f" || echo 0)
             closes=$(grep -c '}' "$f" || echo 0)
             if [ "$opens" != "$closes" ]; then
-              echo "❌ $f: 大括号不配对 (opens=$opens, closes=$closes)"
+              echo "❌ $f: 大括号不配对"
               exit 1
             fi
           done
-          echo "✅ 所有 C# 文件大括号配对正常"
+          echo "✅ 所有 C# 大括号配对正常"
 
       - name: Android Manifest 检查
         run: |
-          if [ -f "./Assets/Plugins/Android/AndroidManifest.xml" ]; then
-            if grep -q 'android:screenOrientation="landscape"' ./Assets/Plugins/Android/AndroidManifest.xml; then
-              echo "✅ AndroidManifest 已配置 landscape 横屏"
-            else
-              echo "❌ AndroidManifest 缺少 landscape 配置"
-              exit 1
-            fi
+          if grep -q 'android:screenOrientation="landscape"' ./Assets/Plugins/Android/AndroidManifest.xml; then
+            echo "✅ AndroidManifest landscape 配置正确"
           else
-            echo "❌ AndroidManifest.xml 不存在"
+            echo "❌ AndroidManifest 缺少 landscape"
             exit 1
           fi
 
-      - name: 输出 Unity License 配置指引
+      - name: 配置指引(手机也能完成)
         run: |
           echo "=================================================="
           echo "📋 当前 CI 处于「自检模式」"
           echo "=================================================="
           echo ""
-          echo "原因:仓库尚未配置 UNITY_LICENSE secret"
+          echo "原因:未配置 UNITY_EMAIL / UNITY_PASSWORD secrets"
           echo ""
-          echo "要切到「真构建模式」生成 APK,请配置以下 secrets:"
+          echo "═══════════════════════════════════════════════"
+          echo "📱 手机端配置步骤(约 5 分钟)"
+          echo "═══════════════════════════════════════════════"
           echo ""
-          echo "1. UNITY_LICENSE (必需) - 获取方式:"
-          echo "   a. 安装 Unity Hub: https://unity.com/download"
-          echo "   b. 注册 Unity ID 并登录"
-          echo "   c. 装 Unity 6000.0 LTS 模块"
-          echo "   d. 访问 https://license.unity3d.com/manual 生成 license"
-          echo "   e. 下载的 .ulf 文件内容整个粘贴到 GitHub Secret"
+          echo "【步骤 1】注册 Unity ID(1 分钟)"
+          echo "  手机浏览器打开:"
+          echo "  https://id.unity.com/en/account/new"
+          echo "  填邮箱+密码+全名+国家选 China"
+          echo "  收邮件点验证链接"
           echo ""
-          echo "2. Android 签名(可选,不配也能出 debug APK):"
-          echo "   - ANDROID_KEYSTORE_NAME"
-          echo "   - ANDROID_KEYSTORE_BASE64"
-          echo "   - ANDROID_KEYSTORE_PASS"
-          echo "   - ANDROID_KEYALIAS_NAME"
-          echo "   - ANDROID_KEYALIAS_PASS"
+          echo "【步骤 2】配 2 个 GitHub Secret(4 分钟)"
+          echo "  手机打开:"
+          echo "  https://github.com/Kdkdmwnwdkd/dingfengbo/settings/secrets/actions"
+          echo "  点 New repository secret,加这两个:"
+          echo "  - Name: UNITY_EMAIL"
+          echo "    Value: 你注册 Unity 用的邮箱"
+          echo "  - Name: UNITY_PASSWORD"
+          echo "    Value: 你 Unity 账号的密码"
           echo ""
-          echo "GitHub 仓库 → Settings → Secrets and variables → Actions → New repository secret"
-          echo ""
-          echo "配置完成后,push 任意改动或打 tag 触发 CI,即可自动构建 APK"
+          echo "═══════════════════════════════════════════════"
+          echo "✅ 配完后 push 任意改动 或 打 v1.0.0 tag 触发 CI,自动构建 APK"
+          echo "═══════════════════════════════════════════════"
 
       - name: Self-check passed
-        run: echo "✅ 项目自检通过,等待 Unity License 配置后切到真构建"
+        run: echo "✅ 项目自检通过,等配置 Unity 账号后切到真构建"
 
-  # ============ 真构建模式:有 Unity License 时跑 ============
+  # ============ 真构建模式:有 Unity 账号时跑 ============
   build:
-    name: Build Android APK (Unity)
+    name: Build Android APK
     runs-on: ubuntu-latest
-    if: ${{ vars.UNITY_LICENSE != '' || secrets.UNITY_LICENSE != '' }}
+    if: ${{ secrets.UNITY_EMAIL != '' && secrets.UNITY_PASSWORD != '' }}
     timeout-minutes: 60
     steps:
       - name: Checkout
@@ -124,6 +116,18 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/lib/node_modules 2>/dev/null || true
           df -h /
 
+      - name: Request Unity Personal License
+        uses: game-ci/unity-request-activation-file@v1
+        id: activation
+        with:
+          unityVersion: ${{ env.UNITY_VERSION }}
+
+      - name: Activate Unity License
+        uses: game-ci/unity-activate@v1
+        with:
+          unityVersion: ${{ env.UNITY_VERSION }}
+          activationFile: ${{ steps.activation.outputs.filePath }}
+
       - name: Build Unity Project (Android)
         uses: game-ci/unity-builder@v4
         with:
@@ -139,7 +143,14 @@ jobs:
           androidKeyaliasPass: ${{ secrets.ANDROID_KEYALIAS_PASS }}
           allowDirtyBuild: true
         env:
-          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+
+      - name: Return Unity License
+        if: always()
+        uses: game-ci/unity-return-license@v1
+        with:
+          unityVersion: ${{ env.UNITY_VERSION }}
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
