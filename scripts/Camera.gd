@@ -1,0 +1,103 @@
+extends Camera3D
+## 《定风波》第三人称摄像机
+## 燕云式：低机位、微微越肩、跟随滞后、受击轻微抖屏
+## 并持续把焦点喂给景深 —— 保证主角永远实、背景永远虚
+
+@export_group("跟随")
+@export var target_path: NodePath
+@export var follow_lag: float = 6.5
+@export var look_lag: float = 8.5
+@export var offset: Vector3 = Vector3(0.55, 1.62, -3.05)
+@export var look_height: float = 1.28
+
+@export_group("动态")
+@export var shake_decay: float = 7.0
+@export var dof_track: bool = true
+@export var dof_bias: float = 6.0
+
+@export_group("景深（燕云式背景虚化）")
+@export var dof_enabled: bool = true
+@export var dof_far_distance: float = 15.0
+@export var dof_far_transition: float = 21.0
+@export var dof_amount: float = 0.078
+@export var dof_near_enabled: bool = false
+
+var target: Node3D
+var _shake: float = 0.0
+var _smooth_pos: Vector3
+var _look_at: Vector3
+var _env: WorldEnvironment
+var _fov_base: float = 62.0
+var _attrs: CameraAttributesPractical
+
+func _ready() -> void:
+	fov = _fov_base
+	near = 0.08
+	far = 620.0
+	_setup_attributes()
+	target = get_node_or_null(target_path)
+	if target:
+		_smooth_pos = _desired_position()
+		_look_at = target.global_position + Vector3.UP * look_height
+		global_position = _smooth_pos
+		look_at(_look_at, Vector3.UP)
+	_env = get_tree().get_first_node_in_group("world_env")
+
+## 景深必须挂在相机属性上 —— Godot 4 把 DOF 从 Environment 移到了 CameraAttributes
+func _setup_attributes() -> void:
+	_attrs = CameraAttributesPractical.new()
+	_attrs.dof_blur_far_enabled = dof_enabled
+	_attrs.dof_blur_far_distance = dof_far_distance
+	_attrs.dof_blur_far_transition = dof_far_transition
+	_attrs.dof_blur_near_enabled = dof_near_enabled
+	_attrs.dof_blur_near_distance = 1.0
+	_attrs.dof_blur_near_transition = 1.8
+	_attrs.dof_blur_amount = dof_amount
+	attributes = _attrs
+
+func _desired_position() -> Vector3:
+	if target == null:
+		return global_position
+	# 用目标朝向决定机位方向，转身时机位自然绕到身后
+	var basis := target.global_transform.basis
+	var local := offset
+	var world := target.global_position \
+		+ basis.x * local.x \
+		+ basis.y * local.y \
+		+ basis.z * local.z
+	return world
+
+func _process(delta: float) -> void:
+	if target == null:
+		return
+
+	var want := _desired_position()
+	_smooth_pos = _smooth_pos.lerp(want, 1.0 - exp(-follow_lag * delta))
+	global_position = _smooth_pos
+
+	var look_target := target.global_position + Vector3.UP * look_height + target.global_transform.basis.z * 1.2
+	_look_at = _look_at.lerp(look_target, 1.0 - exp(-look_lag * delta))
+
+	var final_look := _look_at
+	if _shake > 0.001:
+		var s := _shake
+		final_look += Vector3(
+			randf_range(-s, s),
+			randf_range(-s, s),
+			randf_range(-s, s) * 0.5
+		)
+		_shake = maxf(0.0, _shake - shake_decay * delta)
+
+	look_at(final_look, Vector3.UP)
+
+	if dof_track and _attrs and dof_enabled:
+		var d := global_position.distance_to(target.global_position)
+		_attrs.dof_blur_far_distance = maxf(6.0, d + dof_bias)
+
+func shake(amount: float) -> void:
+	_shake = minf(0.32, _shake + amount)
+
+## 冲刺时轻微拉 FOV，增加速度感（燕云常用手法）
+func set_sprint(active: bool) -> void:
+	var want := _fov_base + (4.5 if active else 0.0)
+	fov = lerp(fov, want, 0.08)
