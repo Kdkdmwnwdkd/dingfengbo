@@ -430,7 +430,13 @@ func _spawn_enemies() -> void:
 			mr.add_child(ap)
 		ap.name = "AnimationPlayer"
 
+		# 出生角度均匀分布；并且刻意避开玩家正后方 ±55°，
+		# 否则开局第一个敌人会正好卡在相机与玩家之间，糊住整个屏幕。
 		var a := TAU * float(i) / float(enemy_count) + _rng.randf_range(-0.3, 0.3)
-		var r := _rng.randf_range(11.0, 17.0)
+		var rear_angle := PI  # 玩家初始朝向是 -Z，正后方即 +Z 方向（角度 π）
+		var diff := absf(angle_difference(a, rear_angle))
+		if diff < deg_to_rad(55.0):
+			a += deg_to_rad(110.0)
+		var r := _rng.randf_range(13.0, 19.0)
 		body.position = Vector3(cos(a) * r, 0.1, sin(a) * r)
 		holder.add_child(body)

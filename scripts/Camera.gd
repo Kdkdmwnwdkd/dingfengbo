@@ -15,6 +15,16 @@ extends Camera3D
 @export var dof_track: bool = true
 @export var dof_bias: float = 6.0
 
+@export_group("防穿模")
+## 开启后，相机与玩家之间出现遮挡物时自动把机位拉近（竹林场景必开）
+@export var collision_avoid: bool = true
+## 检测哪一层：1=世界静态物(竹竿/石头/地形)，2=角色
+@export var collision_mask_avoid: int = 1 | 2
+## 机位到碰撞点之间保留的余量，防止贴面闪烁
+@export var collision_margin: float = 0.28
+## 无论如何不贴到玩家脸上的最近距离
+@export var min_distance: float = 1.15
+
 @export_group("景深（燕云式背景虚化）")
 @export var dof_enabled: bool = true
 @export var dof_far_distance: float = 15.0
@@ -93,6 +103,8 @@ func _process(delta: float) -> void:
 		return
 
 	var want := _desired_position()
+	# 防穿模：相机与玩家之间若有遮挡（竹竿、敌人、地形），把机位拉近
+	want = _avoid_obstacles(want)
 	_smooth_pos = _smooth_pos.lerp(want, 1.0 - exp(-follow_lag * delta))
 	global_position = _smooth_pos
 
@@ -114,6 +126,30 @@ func _process(delta: float) -> void:
 	if dof_track and _attrs and dof_enabled:
 		var d := global_position.distance_to(target.global_position)
 		_attrs.dof_blur_far_distance = maxf(6.0, d + dof_bias)
+
+## 从聚焦点向理想机位打一条射线；撞到东西就把相机拉到碰撞点之前。
+## 竹林场景必做 —— 否则相机会频繁插进竹竿里，满屏绿柱子。
+func _avoid_obstacles(want: Vector3) -> Vector3:
+	if not collision_avoid or target == null:
+		return want
+	var focus := target.global_position + Vector3.UP * look_height
+	var space := get_world_3d().direct_space_state
+	if space == null:
+		return want
+	var from := focus
+	var to := want
+	var params := PhysicsRayQueryParameters3D.create(from, to)
+	params.collision_mask = collision_mask_avoid
+	params.exclude = [target.get_rid()] if target is CollisionObject3D else []
+	params.hit_from_inside = false
+	var hit := space.intersect_ray(params)
+	if hit.is_empty():
+		return want
+	# 命中：把机位收到碰撞点内侧一点，留出 min_distance 兜底
+	var hit_pos: Vector3 = hit["position"]
+	var dir := (want - focus).normalized()
+	var safe := focus + dir * maxf(min_distance, focus.distance_to(hit_pos) - collision_margin)
+	return safe
 
 func shake(amount: float) -> void:
 	_shake = minf(0.32, _shake + amount)
