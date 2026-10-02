@@ -65,17 +65,50 @@ jobs:
             -deststoretype pkcs12
           ls -la "$HOME/debug.keystore"
 
+      - name: 配置 Godot 编辑器设置（关键！）
+        run: |
+          # Godot 的 Android 导出【不读】ANDROID_HOME 环境变量，
+          # 只认编辑器设置里的 export/android/android_sdk_path。
+          # 不写这一步，导出必然报 "configuration errors"。
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          if [ -z "$SDK" ]; then SDK="/usr/local/lib/android/sdk"; fi
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+
+          ES_DIR="$HOME/.config/godot"
+          ES="$ES_DIR/editor_settings-${GODOT_VERSION}.tres"
+          mkdir -p "$ES_DIR"
+
+          # 先让 Godot 在工程目录下跑一次，生成默认的编辑器设置文件
+          godot --headless --quit >/dev/null 2>&1 || true
+
+          if [ ! -f "$ES" ]; then
+            printf '[gd_resource type="EditorSettings" format=3]\n\n[resource]\n' > "$ES"
+          fi
+
+          # 写入 SDK / JDK 路径与调试签名（有则替换，无则追加）
+          set_kv() {
+            local key="$1" val="$2"
+            if grep -q "^${key} = " "$ES"; then
+              sed -i "s|^${key} = .*|${key} = \"${val}\"|" "$ES"
+            else
+              echo "${key} = \"${val}\"" >> "$ES"
+            fi
+          }
+          set_kv "export/android/android_sdk_path" "$SDK"
+          set_kv "export/android/java_sdk_path" "${JAVA_HOME:-/usr/lib/jvm/temurin-17-jdk-amd64}"
+          set_kv "export/android/debug_keystore" "$HOME/debug.keystore"
+          set_kv "export/android/debug_keystore_user" "androiddebugkey"
+          set_kv "export/android/debug_keystore_pass" "android"
+
+          echo "--- 编辑器设置已写入：$ES ---"
+          grep -E "^export/android" "$ES"
+
       - name: 写入 Android 导出配置
         run: |
           cp .github/export_presets.cfg export_presets.cfg
           # keystore 绝对路径按当前 runner 的 $HOME 实际值替换
           sed -i "s|/home/runner/debug.keystore|$HOME/debug.keystore|g" export_presets.cfg
-          # setup-android@v3 会把 SDK 路径写进环境变量，这里做个兜底
-          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
-          if [ -z "$SDK" ]; then SDK="/usr/local/lib/android/sdk"; fi
-          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
-          echo "SDK 路径 = $SDK"
           grep -E "keystore/debug|export_path" export_presets.cfg
 
       - name: 导入工程（首次导入生成 .godot 缓存）
@@ -88,15 +121,26 @@ jobs:
       - name: 导出 APK
         run: |
           mkdir -p build
-          godot --headless --verbose --export-debug "Android" "build/定风波.apk" 2>&1 | tail -50
+          # 用 PIPESTATUS 拿到 godot 的真实退出码，不再被 tail 吞掉（避免"假绿"）
+          set +e
+          godot --headless --verbose --export-debug "Android" "build/定风波.apk" 2>&1 | tail -60
+          RC=${PIPESTATUS[0]}
+          set -e
           echo "--- 产物 ---"
           ls -la build/
+          if [ "$RC" -ne 0 ] || ! ls build/*.apk >/dev/null 2>&1; then
+            echo "::error::APK 导出失败（godot 退出码 $RC）"
+            exit 1
+          fi
+          echo "APK 导出成功"
+          ls -la build/*.apk
 
       - name: 上传 APK 作为构建产物
         uses: actions/upload-artifact@v4
         with:
           name: 定风波-APK
           path: build/*.apk
+          if-no-files-found: error
           retention-days: 90
 
       - name: 创建 Release 并附加 APK
