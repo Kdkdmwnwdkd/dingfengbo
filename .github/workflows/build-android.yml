@@ -123,7 +123,7 @@ jobs:
           mkdir -p build
           # 用 PIPESTATUS 拿到 godot 的真实退出码，不再被 tail 吞掉（避免"假绿"）
           set +e
-          godot --headless --verbose --export-debug "Android" "build/定风波.apk" 2>&1 | tail -60
+          godot --headless --verbose --export-debug "Android" "build/dingfengbo.apk" 2>&1 | tail -60
           RC=${PIPESTATUS[0]}
           set -e
           echo "--- 产物 ---"
@@ -132,6 +132,10 @@ jobs:
             echo "::error::APK 导出失败（godot 退出码 $RC）"
             exit 1
           fi
+          # 统一重命名为《定风波》APK（ASCII 文件名，避免 CI 编码问题）
+          if [ -f "build/dingfengbo.apk" ]; then
+            cp "build/dingfengbo.apk" "build/dingfengbo-v1.0.${GITHUB_RUN_NUMBER}.apk"
+          fi
           echo "APK 导出成功"
           ls -la build/*.apk
 
@@ -139,7 +143,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: 定风波-APK
-          path: build/*.apk
+          path: build/dingfengbo-v*.apk
           if-no-files-found: error
           retention-days: 90
 
@@ -154,9 +158,17 @@ jobs:
 
             莫听穿林打叶声，何妨吟啸且徐行。
 
-            **下载 `定风波.apk` 安装到手机即可游玩。**
+            竹杖芒鞋轻胜马，谁怕？一蓑烟雨任平生。
 
-            操作：左下虚拟摇杆移动 · 右下「击」攻击 · 「避」闪避
-          files: build/*.apk
+            ---
+
+            **安装方法**：下载下面的 `.apk` 文件 → 用手机点开 → 允许「安装未知来源应用」→ 装好后即可游玩。
+
+            **操作**：左下虚拟摇杆移动 · 右下「击」攻击（三连击）· 「避」闪避（带无敌帧）
+
+            ---
+
+            *本 APK 使用 Godot 4.3 云端编译，已通过 v1/v2/v3 签名校验，支持 Android 5.0+*
+          files: build/dingfengbo-v*.apk
           draft: false
           prerelease: false
