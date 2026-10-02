@@ -9,11 +9,12 @@ extends Node3D
 @export var enemy_count: int = 3
 @export var random_seed: int = 20261002
 
-# 玩家模型：three.js 官方 RobotExpressive（CC0，14 动画含 Punch/Death，正常比例）
-# 敌人模型：同 RobotExpressive —— 靠 cloth_tint 区分（玩家月白、敌人暗褐）
-# 想换回 KayKit 或其他模型时改这两行路径即可，动画名已自适应
-const PLAYER_CHARACTER_GLB := "res://assets/characters/RobotExpressive.glb"
-const ENEMY_CHARACTER_GLB := "res://assets/characters/RobotExpressive.glb"
+# 玩家/敌人模型：Asian_F_1_Casual（VALID 库写实亚洲女性，RPM 骨架）
+# 动画来自 RPM 女性动画库（assets/animations/，运行时注入，见 Player.gd）
+# 玩家月白罩色（白衣女侠）、敌人暗褐罩色（黑衣刺客）
+# 想换其他模型改这两行路径即可，动画名已自适应
+const PLAYER_CHARACTER_GLB := "res://assets/characters/Asian_F_1_Casual.glb"
+const ENEMY_CHARACTER_GLB := "res://assets/characters/Asian_F_1_Casual.glb"
 const OUTLINE_SHADER := "res://shaders/ink_outline.gdshader"
 const CHAR_SHADER := "res://shaders/ink_character.gdshader"
 

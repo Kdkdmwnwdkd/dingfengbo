@@ -70,6 +70,44 @@ const ANIM_CANDIDATES := {
 }
 var _anim_resolved: Dictionary = {}
 
+## 外部动画注入（RPM 女性动画库，MIT 许可）：
+## 写实女性角色（VALID 库）本身是 T-pose 静态无动画，
+## 从 assets/animations/ 加载同骨架（RPM 标准，骨骼名兼容）的动画 glb，
+## 取每个文件的第一个动画直接以语义名注册 —— 站/走/跑/闪避全覆盖。
+## 攻击/受击/死亡 RPM 库暂缺，缺失时自动跳过（保持当前姿态，逻辑不受影响）。
+const ANIM_EXT_DIR := "res://assets/animations/"
+const ANIM_EXT_MAP := {
+	"F_Standing_Idle_001.glb": "idle",
+	"F_Walk_002.glb": "walk",
+	"F_Run_001.glb": "run",
+	"F_Jog_Jump_Small_001.glb": "dodge",
+}
+
+func _load_external_anims() -> void:
+	if anim == null:
+		return
+	var lib: AnimationLibrary
+	if anim.has_animation_library(""):
+		lib = anim.get_animation_library("")
+	else:
+		lib = AnimationLibrary.new()
+		anim.add_animation_library("", lib)
+	for fname in ANIM_EXT_MAP.keys():
+		var path := ANIM_EXT_DIR + fname
+		if not ResourceLoader.exists(path):
+			continue
+		var packed := load(path) as PackedScene
+		if packed == null:
+			continue
+		var inst := packed.instantiate()
+		var src := _find_anim_player(inst)
+		if src != null:
+			var semantic: String = ANIM_EXT_MAP[fname]
+			var src_list := src.get_animation_list()
+			if src_list.size() > 0 and not anim.has_animation(semantic):
+				lib.add_animation(semantic, src.get_animation(src_list[0]))
+		inst.queue_free()
+
 func _find_anim_player(n: Node) -> AnimationPlayer:
 	if n == null:
 		return null
@@ -84,6 +122,7 @@ func _find_anim_player(n: Node) -> AnimationPlayer:
 func _ready() -> void:
 	add_to_group("player")
 	health = max_health
+	_load_external_anims()
 	_resolve_anims()
 	_connect_animations()
 	if anim and _a("idle") != "":

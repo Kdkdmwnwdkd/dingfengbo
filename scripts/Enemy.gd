@@ -56,12 +56,46 @@ const ANIM_CANDIDATES := {
 }
 var _anim_resolved: Dictionary = {}
 
+## 外部动画注入：同 Player.gd —— 从 assets/animations/ 加载 RPM 女性动画
+const ANIM_EXT_DIR := "res://assets/animations/"
+const ANIM_EXT_MAP := {
+	"F_Standing_Idle_001.glb": "idle",
+	"F_Walk_002.glb": "walk",
+	"F_Run_001.glb": "run",
+}
+
+func _load_external_anims() -> void:
+	if anim == null:
+		return
+	var lib: AnimationLibrary
+	if anim.has_animation_library(""):
+		lib = anim.get_animation_library("")
+	else:
+		lib = AnimationLibrary.new()
+		anim.add_animation_library("", lib)
+	for fname in ANIM_EXT_MAP.keys():
+		var path := ANIM_EXT_DIR + fname
+		if not ResourceLoader.exists(path):
+			continue
+		var packed := load(path) as PackedScene
+		if packed == null:
+			continue
+		var inst := packed.instantiate()
+		var src := _find_anim_player(inst)
+		if src != null:
+			var semantic: String = ANIM_EXT_MAP[fname]
+			var src_list := src.get_animation_list()
+			if src_list.size() > 0 and not anim.has_animation(semantic):
+				lib.add_animation(semantic, src.get_animation(src_list[0]))
+		inst.queue_free()
+
 func _ready() -> void:
 	add_to_group("enemy")
 	health = max_health
 	_rng.seed = int(global_position.x * 1000.0) ^ int(global_position.z * 977.0) ^ 20261002
 	_wander_target = global_position
 	_player = get_tree().get_first_node_in_group("player")
+	_load_external_anims()
 	_resolve_anims()
 	if anim and _a("idle") != "":
 		anim.play(_a("idle"))
