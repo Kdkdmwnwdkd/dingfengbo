@@ -27,12 +27,15 @@ window/size/viewport_width=1280
 window/size/viewport_height=720
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
-; 屏幕方向：0 = LANDSCAPE（横屏）。
+; 屏幕方向：5 = SENSOR_LANDSCAPE（传感器横屏）。
 ; 注意 Godot 取值对应 DisplayServer::ScreenOrientation：
 ;   0=LANDSCAPE 1=PORTRAIT 2=REVERSE_LANDSCAPE 3=REVERSE_PORTRAIT
 ;   4=SENSOR 5=SENSOR_LANDSCAPE 6=SENSOR_PORTRAIT
-; SENSOR_LANDSCAPE(5) 更友好，但部分老 Android 设备导出器会翻成 screenOrientation=6 反而错乱 —— 保守用 0。
-window/handheld/orientation=0
+; v1.0.20 用静态 LANDSCAPE(0)，部分国产 ROM（vivo/OPPO 系）无视 manifest 的
+; screenOrientation 静态声明 → 竖屏 letterbox → 触摸坐标与 HUD 错位 → 动不了。
+; SENSOR_LANDSCAPE 走重力传感器，ROM 通常更愿意遵守；Android 层对应
+; screenOrientation=6（SENSOR_LANDSCAPE），与 Godot 5 一致，不存在错乱。
+window/handheld/orientation=5
 ; 必须为 false：为 true 时 Android resizeableActivity 会是 true，
 ; 分屏/折叠屏下系统会无视 screenOrientation。
 window/size/resizable=false

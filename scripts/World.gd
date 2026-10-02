@@ -32,9 +32,11 @@ var _hud: CanvasLayer
 var _env: WorldEnvironment
 
 func _ready() -> void:
-	# 运行时强制横屏（双保险）：部分 ROM 会忽略 AndroidManifest 的 screenOrientation，
-	# 引擎层再设一次 —— manifest + 运行时双通道锁横屏
-	DisplayServer.screen_set_orientation(DisplayServer.SCREEN_LANDSCAPE)
+	# 运行时强制横屏（三保险）：部分 ROM 会忽略 AndroidManifest 的静态 screenOrientation，
+	# 引擎层再设一次 SENSOR_LANDSCAPE —— 走重力传感器，ROM 通常更愿意遵守。
+	# v1.0.20 用静态 SCREEN_LANDSCAPE 在 vivo/OPPO 系 ROM 上无效 → 竖屏 letterbox
+	# → HUD 触摸坐标与画面错位 → 摇杆/按钮全点不到。改用 SENSOR_LANDSCAPE。
+	DisplayServer.screen_set_orientation(DisplayServer.SCREEN_SENSOR_LANDSCAPE)
 	_rng.seed = random_seed
 	_env = get_node_or_null("Env")
 	if _env:
