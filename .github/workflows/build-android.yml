@@ -144,12 +144,46 @@ jobs:
             echo "::error::APK 导出失败（godot 退出码 $RC）"
             exit 1
           fi
-          # 统一重命名为《定风波》APK（ASCII 文件名，避免 CI 编码问题）
-          if [ -f "build/dingfengbo.apk" ]; then
-            cp "build/dingfengbo.apk" "build/dingfengbo-v1.0.${GITHUB_RUN_NUMBER}.apk"
-          fi
           echo "APK 导出成功"
           ls -la build/*.apk
+
+      - name: Patch AndroidManifest 强制 sensorLandscape
+        # 根因：Godot 4.3 导出器把 project.godot 的 handheld/orientation 映射到
+        # AndroidManifest 的 screenOrientation 时存在偏差（SENSOR_LANDSCAPE=5 应映射
+        # 到 userLandscape=11，实际产出 userPortrait=12）→ 国产 ROM 直接按竖屏渲染
+        # → 画面 letterbox → HUD 触摸坐标错位 → 怎么点都动不了。
+        # 修复：Godot 导出后用 apktool 解包，把 screenOrientation 改成 sensorLandscape
+        # （走重力传感器，国产 ROM 通常遵守），再重打包+zipalign+签名。
+        run: |
+          set -e
+          cd build
+          # 下载 apktool
+          wget -q "https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar" -O /tmp/apktool.jar
+          # 解包 APK
+          java -jar /tmp/apktool.jar d -f dingfengbo.apk -o decoded
+          # 把所有 activity 的 screenOrientation 强制改成 sensorLandscape
+          # （GodotApp 是主 Activity；其他 activity 通常是 -1/未指定，sed 只改显式赋值的）
+          sed -i 's/android:screenOrientation="[^"]*"/android:screenOrientation="sensorLandscape"/g' decoded/AndroidManifest.xml
+          echo "--- patch 后 manifest 的 screenOrientation ---"
+          grep -o 'screenOrientation="[^"]*"' decoded/AndroidManifest.xml | head -5
+          # 重打包
+          java -jar /tmp/apktool.jar b decoded -o patched_unsigned.apk
+          # 找 build-tools 路径
+          BT=$(ls -d ${ANDROID_HOME}/build-tools/*/ 2>/dev/null | sort -V | tail -1)
+          echo "build-tools: $BT"
+          # zipalign 4 字节对齐（V2 签名前置要求）
+          "${BT}zipalign" -f -v 4 patched_unsigned.apk patched_aligned.apk
+          # 用固定 debug keystore 签名（与导出时同一密钥，指纹一致，可覆盖安装）
+          "${BT}apksigner" sign --ks "$HOME/debug.keystore" --ks-pass pass:android --ks-key-alias androiddebugkey --key-pass pass:android patched_aligned.apk
+          # 验签
+          "${BT}apksigner" verify --verbose patched_aligned.apk | head -5
+          # 替换原 APK
+          mv patched_aligned.apk dingfengbo.apk
+          rm -f patched_unsigned.apk
+          echo "--- patch 完成，最终 APK ---"
+          ls -la dingfengbo.apk
+          # 重命名带版本号
+          cp "dingfengbo.apk" "dingfengbo-v1.0.${GITHUB_RUN_NUMBER}.apk"
 
       - name: 上传 APK 作为构建产物
         uses: actions/upload-artifact@v4
