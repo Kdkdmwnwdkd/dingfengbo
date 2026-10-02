@@ -44,12 +44,17 @@ func _find_anim_player(n: Node) -> AnimationPlayer:
 			return r
 	return null
 
-const ANIM_IDLE := "Idle"
-const ANIM_WALK := "Walking_A"
-const ANIM_RUN := "Running_A"
-const ANIM_ATTACK := "1H_Melee_Attack_Chop"
-const ANIM_HIT := "Hit_A"
-const ANIM_DEATH := "Death_A"
+## 动画名候选表：每个语义按顺序探测 has_animation，命中即用 —— 换模型零成本
+## 覆盖 KayKit / Mixamo / 原神提取 / Quaternius 等主流命名
+const ANIM_CANDIDATES := {
+	"idle":   ["Idle", "idle", "IDLE", "Standing", "Stand"],
+	"walk":   ["Walking_A", "Walk", "walk", "Walking", "WalkForward"],
+	"run":    ["Running_A", "Run", "run", "Running", "RunForward"],
+	"attack": ["1H_Melee_Attack_Chop", "1H_Melee_Attack_Slice_Horizontal", "Attack", "Attack01", "Slash", "attack"],
+	"hurt":   ["Hit_A", "Hit", "Hurt", "Damage", "GetHit", "hit"],
+	"death":  ["Death_A", "Death", "Die", "Dead", "death"],
+}
+var _anim_resolved: Dictionary = {}
 
 func _ready() -> void:
 	add_to_group("enemy")
@@ -57,8 +62,27 @@ func _ready() -> void:
 	_rng.seed = int(global_position.x * 1000.0) ^ int(global_position.z * 977.0) ^ 20261002
 	_wander_target = global_position
 	_player = get_tree().get_first_node_in_group("player")
-	if anim and anim.has_animation(ANIM_IDLE):
-		anim.play(ANIM_IDLE)
+	_resolve_anims()
+	if anim and _a("idle") != "":
+		anim.play(_a("idle"))
+
+## 动画名自适应：探测模型自带的动画命名，建立语义→实际动画名的映射
+func _resolve_anims() -> void:
+	_anim_resolved.clear()
+	if anim == null:
+		return
+	for semantic in ANIM_CANDIDATES.keys():
+		for name in ANIM_CANDIDATES[semantic]:
+			if anim.has_animation(name):
+				_anim_resolved[semantic] = name
+				break
+		if not _anim_resolved.has(semantic):
+			_anim_resolved[semantic] = ""
+	print("[Enemy] 动画解析: ", _anim_resolved)
+
+## 取语义对应的实际动画名（已适配模型命名）
+func _a(semantic: String) -> String:
+	return _anim_resolved.get(semantic, "")
 
 func _physics_process(delta: float) -> void:
 	if state == State.DEAD:
@@ -99,10 +123,10 @@ func _do_wander(delta: float) -> void:
 		var d := to.normalized()
 		velocity.x = move_toward(velocity.x, d.x * move_speed, 9.0 * delta)
 		velocity.z = move_toward(velocity.z, d.z * move_speed, 9.0 * delta)
-		_play(ANIM_WALK)
+		_play("walk")
 	else:
 		_slow_down(delta)
-		_play(ANIM_IDLE)
+		_play("idle")
 
 	if _dx_to_player() < detect_range:
 		state = State.CHASE
@@ -137,7 +161,7 @@ func _do_chase(delta: float) -> void:
 	var spd := chase_speed if dx > 5.0 else move_speed * 1.1
 	velocity.x = move_toward(velocity.x, sx * spd, 11.0 * delta)
 	velocity.z = move_toward(velocity.z, sz * minf(spd, 2.4), 8.0 * delta)
-	_play(ANIM_RUN if dx > 5.0 else ANIM_WALK)
+	_play("run" if dx > 5.0 else "walk")
 
 func _do_cooldown(delta: float) -> void:
 	_slow_down(delta)
@@ -149,8 +173,8 @@ func _do_attack() -> void:
 	_cd = attack_cooldown
 	velocity.x = 0.0
 	velocity.z = 0.0
-	if anim and anim.has_animation(ANIM_ATTACK):
-		anim.play(ANIM_ATTACK, 0.06)
+	if anim and _a("attack") != "":
+		anim.play(_a("attack"), 0.06)
 	# 命中判定：延迟到挥砍中段，给玩家闪避窗口 —— 横版矩形判定
 	await get_tree().create_timer(0.28).timeout
 	if state == State.DEAD or _player == null or not is_instance_valid(_player):
@@ -174,8 +198,11 @@ func _face_move_dir(delta: float) -> void:
 	var want := atan2(flat.x, flat.z)
 	model_root.rotation.y = lerp_angle(model_root.rotation.y, want, 9.0 * delta)
 
-func _play(a: String) -> void:
+func _play(semantic: String) -> void:
 	if anim == null:
+		return
+	var a := _a(semantic)
+	if a == "":
 		return
 	if anim.current_animation == a:
 		return
@@ -225,16 +252,16 @@ func take_damage(amount: int, from: Vector3) -> void:
 	if health <= 0:
 		_die()
 	else:
-		if anim and anim.has_animation(ANIM_HIT):
-			anim.play(ANIM_HIT, 0.05)
+		if anim and _a("hurt") != "":
+			anim.play(_a("hurt"), 0.05)
 		state = State.COOLDOWN
 		_cd = 0.35
 
 func _die() -> void:
 	state = State.DEAD
 	velocity = Vector3.ZERO
-	if anim and anim.has_animation(ANIM_DEATH):
-		anim.play(ANIM_DEATH, 0.1)
+	if anim and _a("death") != "":
+		anim.play(_a("death"), 0.1)
 	died.emit(self)
 	# 尸身停留一下再沉入雾中
 	var tw := create_tween()

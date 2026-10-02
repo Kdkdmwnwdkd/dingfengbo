@@ -1,7 +1,12 @@
 extends CharacterBody3D
-## 《定风波》主角控制器
+## 《定风波》主角控制器 —— 横版水墨动作
 ## 逻辑继承自网页版 v6（四向移动 / 普攻三连 / 闪避无敌帧），
-## 但动作全部换成 KayKit 真实骨骼动画 —— 这是观感质变的关键
+## 但动作全部换成真实骨骼动画 —— 这是观感质变的关键
+##
+## 【换模型零成本】动画名自适应：
+## 不同来源的模型动画命名天差地别（KayKit 用 "Walking_A"、Mixamo 用 "Walk"、
+## 原神提取常用 "walk" 或 "WalkForward"…）。_resolve_anims() 在 _ready 里
+## 按候选名表逐个 has_animation 探测，命中即用 —— 换任何模型都不用改代码。
 
 signal health_changed(cur: int, max: int)
 signal combo_changed(step: int)
@@ -50,6 +55,21 @@ var _want_dodge: bool = false
 @onready var anim: AnimationPlayer = _find_anim_player(model_root)
 @onready var _env: WorldEnvironment = get_tree().get_first_node_in_group("world_env")
 
+## 动画名候选表：每个语义按顺序探测 has_animation，命中即用。
+## 覆盖 KayKit / Mixamo / 原神提取 / Quaternius 等主流命名。
+const ANIM_CANDIDATES := {
+	"idle":    ["Idle", "idle", "IDLE", "Standing", "Stand", "BreathIdle"],
+	"walk":    ["Walking_A", "Walk", "walk", "Walking", "WalkForward", "WalkF"],
+	"run":     ["Running_A", "Run", "run", "Running", "RunForward", "RunF", "Sprint"],
+	"attack1": ["1H_Melee_Attack_Slice_Diagonal", "Attack01", "Attack_01", "Slash1", "Attack1", "attack_1", "Atk1"],
+	"attack2": ["1H_Melee_Attack_Slice_Horizontal", "Attack02", "Attack_02", "Slash2", "Attack2", "attack_2", "Atk2"],
+	"attack3": ["2H_Melee_Attack_Spin", "Attack03", "Attack_03", "Slash3", "Attack3", "attack_3", "Atk3"],
+	"dodge":   ["Dodge_Forward", "Dodge", "Roll", "DodgeForward", "Backstep", "dodge", "DodgeRoll"],
+	"hurt":    ["Hit_A", "Hit", "Hurt", "Damage", "GetHit", "hit", "HitReaction"],
+	"death":   ["Death_A", "Death", "Die", "Dead", "death", "Death01"],
+}
+var _anim_resolved: Dictionary = {}
+
 func _find_anim_player(n: Node) -> AnimationPlayer:
 	if n == null:
 		return null
@@ -61,26 +81,36 @@ func _find_anim_player(n: Node) -> AnimationPlayer:
 			return r
 	return null
 
-const ANIM_IDLE := "Idle"
-const ANIM_WALK := "Walking_A"
-const ANIM_RUN := "Running_A"
-const COMBO_ANIMS := [
-	"1H_Melee_Attack_Slice_Diagonal",
-	"1H_Melee_Attack_Slice_Horizontal",
-	"2H_Melee_Attack_Spin",
-]
-const ANIM_DODGE := "Dodge_Forward"
-
 func _ready() -> void:
 	add_to_group("player")
 	health = max_health
+	_resolve_anims()
 	_connect_animations()
-	if anim:
-		anim.play(ANIM_IDLE)
+	if anim and _a("idle") != "":
+		anim.play(_a("idle"))
+
+## 动画名自适应：探测模型自带的动画命名，建立语义→实际动画名的映射
+func _resolve_anims() -> void:
+	_anim_resolved.clear()
+	if anim == null:
+		push_warning("[Player] 未找到 AnimationPlayer，请确认 ModelRoot 下已挂载")
+		return
+	for semantic in ANIM_CANDIDATES.keys():
+		for name in ANIM_CANDIDATES[semantic]:
+			if anim.has_animation(name):
+				_anim_resolved[semantic] = name
+				break
+		if not _anim_resolved.has(semantic):
+			# 兜底：缺失的语义留空，播放时跳过
+			_anim_resolved[semantic] = ""
+	print("[Player] 动画解析: ", _anim_resolved)
+
+## 取语义对应的实际动画名（已适配模型命名）
+func _a(semantic: String) -> String:
+	return _anim_resolved.get(semantic, "")
 
 func _connect_animations() -> void:
 	if anim == null:
-		push_warning("[Player] 未找到 AnimationPlayer，请确认 ModelRoot 下已挂载")
 		return
 	anim.animation_finished.connect(_on_anim_finished)
 
@@ -153,8 +183,8 @@ func _start_dodge() -> void:
 	combo_step = 0
 	velocity.z = 0.0  # 横版：疾步只发生在 X 轴
 	combo_changed.emit(0)
-	if anim and anim.has_animation(ANIM_DODGE):
-		anim.play(ANIM_DODGE, 0.08, 1.25)
+	if anim and _a("dodge") != "":
+		anim.play(_a("dodge"), 0.08, 1.25)
 	dodged.emit()
 
 func _dodge_direction() -> Vector3:
@@ -172,20 +202,22 @@ func _handle_attack() -> void:
 func _start_attack() -> void:
 	is_attacking = true
 	combo_step += 1
-	if combo_step > COMBO_ANIMS.size():
+	if combo_step > 3:
 		combo_step = 1
 	combo_timer = combo_window
 	attack_lock = 0.18
 	combo_changed.emit(combo_step)
 
-	var a: String = COMBO_ANIMS[combo_step - 1]
+	var a := _a("attack%d" % combo_step)
 	var speed := 1.0 + (combo_step - 1) * 0.12
-	if anim and anim.has_animation(a):
+	if anim and a != "":
 		anim.play(a, 0.06, speed)
 	attack_hit.emit(attack_damage + (combo_step - 1) * 4, facing)
 
 func _on_anim_finished(name_: StringName) -> void:
-	if String(name_).begins_with("1H_Melee") or String(name_).begins_with("2H_Melee"):
+	var s := String(name_)
+	# 攻击动画播完才解除攻击锁，否则会卡在第一段
+	if s == _a("attack1") or s == _a("attack2") or s == _a("attack3"):
 		is_attacking = false
 		if combo_timer <= 0.0:
 			combo_step = 0
@@ -227,9 +259,11 @@ func _handle_locomotion(delta: float) -> void:
 func _play_locomotion_anim(moving: bool, speed: float) -> void:
 	if anim == null:
 		return
-	var target := ANIM_IDLE
+	var target := _a("idle")
 	if moving:
-		target = ANIM_RUN if speed > move_speed + 0.5 else ANIM_WALK
+		target = _a("run") if speed > move_speed + 0.5 else _a("walk")
+	if target == "":
+		return
 	if anim.current_animation != target and anim.has_animation(target):
 		anim.play(target, 0.14)
 
@@ -247,11 +281,14 @@ func take_damage(amount: int, from: Vector3) -> void:
 	health_changed.emit(health, max_health)
 	if health <= 0:
 		_die()
+	else:
+		if anim and _a("hurt") != "" and anim.has_animation(_a("hurt")):
+			anim.play(_a("hurt"), 0.05)
 
 func _die() -> void:
 	is_alive = false
-	if anim and anim.has_animation("Death_A"):
-		anim.play("Death_A", 0.12)
+	if anim and _a("death") != "" and anim.has_animation(_a("death")):
+		anim.play(_a("death"), 0.12)
 
 func heal(amount: int) -> void:
 	if not is_alive:
