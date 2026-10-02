@@ -35,13 +35,34 @@ func _ready() -> void:
 	near = 0.08
 	far = 620.0
 	_setup_attributes()
-	target = get_node_or_null(target_path)
-	if target:
-		_smooth_pos = _desired_position()
-		_look_at = target.global_position + Vector3.UP * look_height
-		global_position = _smooth_pos
-		look_at(_look_at, Vector3.UP)
 	_env = get_tree().get_first_node_in_group("world_env")
+	# 优先用 setup() 显式注入的 target；其次才回退到 @export 的 target_path
+	if target == null:
+		_resolve_target()
+	else:
+		_snap_to_target()
+
+## 由 World.gd 在挂载脚本后立刻调用 —— 比依赖 @export 的 target_path 更可靠。
+## （动态 set("target_path") 在脚本挂载前是不生效的，那是写给了不存在的属性）
+func setup(t: Node3D) -> void:
+	target = t
+	target_path = get_path_to(t) if t else NodePath()
+	_snap_to_target()
+
+func _resolve_target() -> void:
+	if not target_path.is_empty():
+		target = get_node_or_null(target_path)
+	if target:
+		_snap_to_target()
+
+## 立刻把相机摆到目标身后，避免开局第一帧从原点猛甩过去
+func _snap_to_target() -> void:
+	if target == null:
+		return
+	_smooth_pos = _desired_position()
+	_look_at = target.global_position + Vector3.UP * look_height
+	global_position = _smooth_pos
+	look_at(_look_at, Vector3.UP)
 
 ## 景深必须挂在相机属性上 —— Godot 4 把 DOF 从 Environment 移到了 CameraAttributes
 func _setup_attributes() -> void:

@@ -387,7 +387,13 @@ func _setup_camera() -> void:
 		_camera.name = "Camera"
 		add_child(_camera)
 	_camera.set_script(load("res://scripts/Camera.gd"))
-	_camera.set("target_path", _camera.get_path_to(_player))
+	# 挂上脚本后立刻显式注入目标。
+	# 注意：不能依赖 set("target_path", ...) —— 在脚本挂载前那是写给一个不存在的属性，
+	# 挂载后 Godot 不会把它当作 @export 的值读回来，相机就会 target=null 卡死。
+	if _camera.has_method("setup"):
+		_camera.call("setup", _player)
+	else:
+		push_error("[定风波] Camera.gd 缺少 setup() 方法，相机将无法跟随")
 
 func _setup_hud() -> void:
 	_hud = get_node_or_null("HUD") as CanvasLayer
