@@ -1,7 +1,8 @@
 extends Node3D
-## 《定风波》场景总装
+## 《定风波》场景总装 —— 横版水墨长卷
 ## 全部程序化装配 —— 不依赖编辑器手工拖拽，确保任何人 clone 下来直接能跑
-## 构建顺序：环境 → 地面 → 山 → 竹林 → 石头 → 玩家 → 摄像机 → 敌人 → HUD → 战斗
+## 横版布局：X 轴是画卷横向（战场），Z 轴是画卷纵深（背景在 -Z，镜头在 +Z）
+## 构建顺序：环境 → 地面 → 远山长卷 → 竹林 → 石头 → 玩家 → 摄像机 → 敌人 → HUD → 战斗
 
 @export var spawn_bamboo: bool = true
 @export var spawn_enemies: bool = true
@@ -12,6 +13,11 @@ const PLAYER_CHARACTER_GLB := "res://assets/characters/Rogue_Hooded.glb"
 const ENEMY_CHARACTER_GLB := "res://assets/characters/Knight.glb"
 const OUTLINE_SHADER := "res://shaders/ink_outline.gdshader"
 const CHAR_SHADER := "res://shaders/ink_character.gdshader"
+
+## 走道半宽：玩家与敌人的横版战场（与 Bamboo.gd 的 lane_half 一致）
+const LANE_HALF := 3.2
+## 画卷横向边界（±m），越界处有隐形墙
+const WORLD_X_EXTENT := 128.0
 
 var _rng := RandomNumberGenerator.new()
 var _mat_ground: StandardMaterial3D
@@ -34,6 +40,7 @@ func _ready() -> void:
 	if spawn_bamboo:
 		_build_bamboo_field()
 	_build_rocks()
+	_build_bounds()
 	_spawn_player()
 	_setup_camera()
 	_setup_hud()
@@ -41,7 +48,7 @@ func _ready() -> void:
 	if spawn_enemies:
 		_spawn_enemies()
 
-	print("[定风波] 场景构建完成 | 敌人:%d | 竹林:%s" % [enemy_count, str(spawn_bamboo)])
+	print("[定风波] 横卷场景构建完成 | 敌人:%d | 竹林:%s" % [enemy_count, str(spawn_bamboo)])
 
 # ---------------- 材质 ----------------
 func _build_materials() -> void:
@@ -72,25 +79,28 @@ func _mk_mtn(c: Color) -> StandardMaterial3D:
 
 # ---------------- 地面 ----------------
 func _build_ground() -> void:
-	var size := 420.0
+	# 横版长卷：X 方向长（战场），Z 方向窄（走道 + 背景林带）
+	var sx := 300.0
+	var sz := 96.0
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(size, size)
+	plane.size = Vector2(sx, sz)
 	plane.subdivide_width = 32
-	plane.subdivide_depth = 32
+	plane.subdivide_depth = 16
 	plane.material = _mat_ground
 
 	var mi := MeshInstance3D.new()
 	mi.name = "Ground"
 	mi.mesh = plane
+	mi.position = Vector3(0.0, 0.0, -22.0)  # 中心略偏 -Z：走道在北半幅，背景林有地可站
 	add_child(mi)
 
 	var body := StaticBody3D.new()
 	body.name = "GroundBody"
 	var col := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = Vector3(size, 0.4, size)
+	box.size = Vector3(sx, 0.4, sz)
 	col.shape = box
-	col.position = Vector3(0.0, -0.2, 0.0)
+	col.position = Vector3(0.0, -0.2, -22.0)
 	body.add_child(col)
 	add_child(body)
 
@@ -116,11 +126,12 @@ func _add_ground_patches(col: Color, n: int, s_min: float, s_max: float, opacity
 	mm.instance_count = n
 
 	for i in n:
-		var a := _rng.randf_range(0.0, TAU)
-		var r := _rng.randf_range(8.0, 120.0)
+		# 横卷撒点：X 均匀铺开，Z 限制在地面范围内（走道 + 林带）
+		var px := _rng.randf_range(-140.0, 140.0)
+		var pz := _rng.randf_range(-58.0, 10.0)
 		var sz := _rng.randf_range(s_min, s_max)
 		var t := Transform3D()
-		t.origin = Vector3(cos(a) * r, y, sin(a) * r)
+		t.origin = Vector3(px, y, pz)
 		t = t.rotated(Vector3.UP, _rng.randf_range(0.0, TAU))
 		t = t.scaled(Vector3(sz, 1.0, sz))
 		mm.set_instance_transform(i, t)
@@ -131,13 +142,14 @@ func _add_ground_patches(col: Color, n: int, s_min: float, s_max: float, opacity
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mmi)
 
-# ---------------- 三层山 ----------------
+# ---------------- 远山长卷 ----------------
 func _build_mountains() -> void:
-	# 加大了尺寸与数量，并让远景更高 —— 制造"群山连绵、层叠推远"的水墨感
+	# 横版远山：不再是"绕玩家一圈"，而是像水墨长卷那样
+	# 三层山脊沿 X 轴横向铺开、在 -Z 远处层层推远 —— 侧视镜头扫过去就是一幅横幅山水
 	var layers := [
-		{"R": 480.0, "h": 195.0, "n": 22, "mat": _mat_mtn[0], "y": -26.0, "w": 1.45},
-		{"R": 355.0, "h": 122.0, "n": 24, "mat": _mat_mtn[1], "y": -14.0, "w": 1.30},
-		{"R": 262.0, "h": 72.0, "n": 26, "mat": _mat_mtn[2], "y": -5.0, "w": 1.10},
+		{"z": -178.0, "h": 150.0, "n": 20, "mat": _mat_mtn[0], "y": -24.0, "w": 1.45},
+		{"z": -122.0, "h": 95.0, "n": 22, "mat": _mat_mtn[1], "y": -13.0, "w": 1.30},
+		{"z": -74.0, "h": 56.0, "n": 24, "mat": _mat_mtn[2], "y": -4.0, "w": 1.10},
 	]
 
 	var holder := Node3D.new()
@@ -148,10 +160,11 @@ func _build_mountains() -> void:
 		var L: Dictionary = layers[li]
 		var n: int = L["n"]
 		for i in n:
-			var a := TAU * float(i) / float(n) + _rng.randf_range(-0.16, 0.16)
-			var r: float = float(L["R"]) * _rng.randf_range(0.85, 1.15)
-			var h: float = float(L["h"]) * _rng.randf_range(0.5, 1.45)
-			var base := Vector3(cos(a) * r, float(L["y"]), sin(a) * r)
+			# 沿 X 均匀铺开 + 横向抖动；山尖高度随横向位置做正弦起伏 —— 群峰有韵律
+			var base_x := -190.0 + 380.0 * float(i) / float(n - 1) + _rng.randf_range(-8.0, 8.0)
+			var ridge := sin(float(i) * 1.7 + float(li) * 2.3) * float(L["h"]) * 0.22
+			var h: float = float(L["h"]) * _rng.randf_range(0.72, 1.18) + ridge
+			var base := Vector3(base_x, float(L["y"]), float(L["z"]) + _rng.randf_range(-14.0, 14.0))
 			_add_peak(holder, base, h, float(L["h"]), L["mat"], li, float(L["w"]))
 
 func _add_peak(parent: Node3D, base: Vector3, height: float, ref_h: float, mat: Material, layer: int, wide: float) -> void:
@@ -169,9 +182,9 @@ func _add_peak(parent: Node3D, base: Vector3, height: float, ref_h: float, mat: 
 	mi.mesh = cone
 	mi.position = base + Vector3(0.0, height * 0.5, 0.0)
 	mi.rotation.y = _rng.randf_range(0.0, TAU)
-	# 山体轻微侧倾 → 群峰错落，不是整齐一圈
-	mi.rotation.x = _rng.randf_range(-0.09, 0.09)
-	mi.rotation.z = _rng.randf_range(-0.07, 0.07)
+	# 山体轻微侧倾 → 群峰错落，不是整齐一排
+	mi.rotation.x = _rng.randf_range(-0.07, 0.07)
+	mi.rotation.z = _rng.randf_range(-0.06, 0.06)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(mi)
 
@@ -198,11 +211,14 @@ func _build_rocks() -> void:
 	mm.instance_count = n
 
 	for i in n:
-		var a := _rng.randf_range(0.0, TAU)
-		var r := _rng.randf_range(9.0, 120.0)
+		# 横卷撒点：点缀走道两侧与林带边缘，X 长条铺开
+		var px := _rng.randf_range(-120.0, 120.0)
+		var pz := _rng.randf_range(-30.0, 9.0)
+		if absf(pz) < LANE_HALF + 0.5:
+			pz = -signf(pz) * (LANE_HALF + 1.2)  # 走道内不放石头绊脚
 		var s := _rng.randf_range(0.22, 0.85)
 		var t := Transform3D()
-		t.origin = Vector3(cos(a) * r, s * _rng.randf_range(0.15, 0.42), sin(a) * r)
+		t.origin = Vector3(px, s * _rng.randf_range(0.15, 0.42), pz)
 		t = t.rotated(Vector3.UP, _rng.randf_range(0.0, TAU))
 		t = t.scaled(Vector3(s * _rng.randf_range(0.8, 1.5), s * _rng.randf_range(0.5, 0.95), s * _rng.randf_range(0.8, 1.5)))
 		mm.set_instance_transform(i, t)
@@ -212,8 +228,32 @@ func _build_rocks() -> void:
 	mmi.multimesh = mm
 	add_child(mmi)
 
-# ---------------- 角色装配（含 glb 导入 + 水墨描边）----------------
-func _load_character(glb_path: String, char_name: String) -> Node3D:
+# ---------------- 隐形边界墙 ----------------
+func _build_bounds() -> void:
+	# 画卷两端各立一面看不见的墙 —— 横版跑不出画面，也不会掉进背景林带深处
+	for side in [-1.0, 1.0]:
+		var wall := StaticBody3D.new()
+		wall.name = "Bound_%s" % ("L" if side < 0.0 else "R")
+		wall.position = Vector3(side * WORLD_X_EXTENT, 0.0, 0.0)
+		var col := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = Vector3(1.0, 24.0, 40.0)
+		col.shape = box
+		wall.add_child(col)
+		add_child(wall)
+	# 走道纵深后沿也拦一道（z = -6），防止被击退进背景林
+	var back := StaticBody3D.new()
+	back.name = "Bound_Back"
+	back.position = Vector3(0.0, 0.0, -6.2)
+	var bcol := CollisionShape3D.new()
+	var bbox := BoxShape3D.new()
+	bbox.size = Vector3(WORLD_X_EXTENT * 2.0, 24.0, 1.0)
+	bcol.shape = bbox
+	back.add_child(bcol)
+	add_child(back)
+
+# ---------------- 角色装配（含 glb 导入 + 水墨描边 + 侠客调色）----------------
+func _load_character(glb_path: String, char_name: String, is_player: bool = false) -> Node3D:
 	var packed := load(glb_path) as PackedScene
 	if packed == null:
 		push_error("[定风波] 无法加载角色模型: %s" % glb_path)
@@ -225,8 +265,8 @@ func _load_character(glb_path: String, char_name: String) -> Node3D:
 	# 清掉 owner，避免后续挂节点时报 inconsistent 警告
 	_clear_owner(inst)
 
-	# 应用水墨角色着色器（保留贴图色相 + 硬阶色带 + 边缘光）
-	_apply_character_shader(inst)
+	# 应用水墨角色着色器（保留贴图色相 + 硬阶色带 + 边缘光 + 侠客调色）
+	_apply_character_shader(inst, is_player)
 
 	# 叠加描边外壳
 	_add_outline_shell(inst)
@@ -238,7 +278,7 @@ func _clear_owner(n: Node) -> void:
 	for c in n.get_children():
 		_clear_owner(c)
 
-func _apply_character_shader(root: Node) -> void:
+func _apply_character_shader(root: Node, is_player: bool = false) -> void:
 	var shader := load(CHAR_SHADER)
 	if shader == null:
 		return
@@ -263,12 +303,23 @@ func _apply_character_shader(root: Node) -> void:
 					mat.set_shader_parameter("albedo_tex", st.albedo_texture)
 			# 生成五阶渐变图（墨分五色）
 			mat.set_shader_parameter("gradient_map", _make_gradient_texture(5))
+			# —— 侠客调色 ——
+			# KayKit 素材是高饱和卡通色（绿袍/亮甲），和燕云式水墨气质冲突。
+			# 治标方案：去饱和压掉塑料感，再罩一层主色 ——
+			#   玩家：月白长衫（水墨白衣侠客）
+			#   敌人：暗褐玄甲（压成近墨色，衬红缨点缀）
+			if is_player:
+				mat.set_shader_parameter("desaturate", 0.78)
+				mat.set_shader_parameter("cloth_tint", Color(1.06, 1.04, 0.99))
+			else:
+				mat.set_shader_parameter("desaturate", 0.55)
+				mat.set_shader_parameter("cloth_tint", Color(0.60, 0.55, 0.52))
 			mi.set_surface_override_material(0, mat)
-			# 角色需要投影，才有燕云那种落地硬阴影
+			# 角色需要投影，才有落地硬阴影
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 		else:
 			# 只对非网格节点继续下钻（递归放在 else 里，避免网格被重复处理）
-			_apply_character_shader(child)
+			_apply_character_shader(child, is_player)
 
 ## 生成 N 阶硬色带贴图 —— 水墨「墨分五色」的技术实现
 func _make_gradient_texture(steps: int) -> GradientTexture1D:
@@ -363,7 +414,7 @@ func _find_anim_player(root: Node) -> AnimationPlayer:
 ## 本工程的 Rogue_Hooded.glb / Knight.glb 都已在 .import 里设为 1.49。
 const CHARACTER_SCALE := 1.0
 
-func _build_body(glb: String, char_name: String, col_radius: float, col_height: float, col_y: float) -> Node:
+func _build_body(glb: String, char_name: String, col_radius: float, col_height: float, col_y: float, is_player: bool = false) -> Node:
 	var body := CharacterBody3D.new()
 	body.name = char_name
 
@@ -378,13 +429,13 @@ func _build_body(glb: String, char_name: String, col_radius: float, col_height: 
 	var holder := Node3D.new()
 	holder.name = "ModelRoot"
 	body.add_child(holder)
-	holder.add_child(_load_character(glb, char_name))
+	holder.add_child(_load_character(glb, char_name, is_player))
 
 	return body
 
 # ---------------- 玩家 ----------------
 func _spawn_player() -> void:
-	var body := _build_body(PLAYER_CHARACTER_GLB, "Player", 0.34, 1.72, 0.86)
+	var body := _build_body(PLAYER_CHARACTER_GLB, "Player", 0.34, 1.72, 0.86, true)
 	body.set_script(load("res://scripts/Player.gd"))
 
 	# ⚠️ 绝对不要搬动 glb 里自带的 AnimationPlayer！
@@ -459,7 +510,7 @@ func _spawn_enemies() -> void:
 	add_child(holder)
 
 	for i in enemy_count:
-		var body := _build_body(ENEMY_CHARACTER_GLB, "Enemy_%d" % (i + 1), 0.36, 1.8, 0.9)
+		var body := _build_body(ENEMY_CHARACTER_GLB, "Enemy_%d" % (i + 1), 0.36, 1.8, 0.9, false)
 		body.set_script(load("res://scripts/Enemy.gd"))
 		# 同 Player：不搬 AnimationPlayer，保持 glb 原始层级，
 		# 否则动画轨道 "Rig/Skeleton3D:xxx" 解析不到，敌人也会塌缩成方块。
@@ -467,13 +518,10 @@ func _spawn_enemies() -> void:
 		if _find_anim_player(mr) == null:
 			push_warning("[定风波] Enemy_%d 模型里没有 AnimationPlayer" % (i + 1))
 
-		# 出生角度均匀分布；并且刻意避开玩家正后方 ±55°，
-		# 否则开局第一个敌人会正好卡在相机与玩家之间，糊住整个屏幕。
-		var a := TAU * float(i) / float(enemy_count) + _rng.randf_range(-0.3, 0.3)
-		var rear_angle := PI  # 玩家初始朝向是 -Z，正后方即 +Z 方向（角度 π）
-		var diff := absf(angle_difference(a, rear_angle))
-		if diff < deg_to_rad(55.0):
-			a += deg_to_rad(110.0)
-		var r := _rng.randf_range(13.0, 19.0)
-		body.position = Vector3(cos(a) * r, 0.1, sin(a) * r)
+		# 横版出生：沿画卷 X 轴左右分布，纵深锁在走道内（|z| ≤ 2.2）。
+		# 交替布在玩家两侧 —— 出场就是"前后有敌"的横版压迫感，
+		# 也天然杜绝了旧版"敌人卡在镜头与玩家之间糊住全屏"的问题（镜头在 +Z 外侧）。
+		var side := 1.0 if i % 2 == 0 else -1.0
+		var dist := _rng.randf_range(9.0, 18.0)
+		body.position = Vector3(side * dist, 0.1, _rng.randf_range(-2.2, 2.2))
 		holder.add_child(body)

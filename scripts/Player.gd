@@ -151,16 +151,17 @@ func _start_dodge() -> void:
 	dodge_time = 0.0
 	is_attacking = false
 	combo_step = 0
+	velocity.z = 0.0  # 横版：疾步只发生在 X 轴
 	combo_changed.emit(0)
 	if anim and anim.has_animation(ANIM_DODGE):
 		anim.play(ANIM_DODGE, 0.08, 1.25)
 	dodged.emit()
 
 func _dodge_direction() -> Vector3:
-	var dir := Vector3(move_input.x, 0.0, move_input.y)
-	if dir.length_squared() < 0.01:
-		dir = facing
-	return dir.normalized()
+	# 横版疾步：优先沿摇杆方向（±X），无输入则向后撤步
+	if absf(move_input.x) > 0.12:
+		return Vector3(signf(move_input.x), 0.0, 0.0)
+	return -facing
 
 # ---------------- 攻击 ----------------
 func _handle_attack() -> void:
@@ -195,24 +196,29 @@ func _handle_locomotion(delta: float) -> void:
 	if is_dodging:
 		return
 
-	var dir := Vector3(move_input.x, 0.0, move_input.y)
-	if dir.length_squared() > 0.001:
-		dir = dir.normalized()
+	# 横版走位：只取摇杆的横向分量 —— 左右移动是核心语言，纵向推杆忽略
+	# （纵深锁定在走道上，与侧视镜头、横版判定框配套）
+	var axis := move_input.x
+	if absf(axis) > 0.12:
+		var dir := Vector3(signf(axis), 0.0, 0.0)
 		facing = dir
+		# 目标朝向 ±90°：模型侧影对准镜头 —— 横版的标准站姿
 		var target_yaw := atan2(dir.x, dir.z)
 		model_root.rotation.y = lerp_angle(model_root.rotation.y, target_yaw, turn_speed * delta)
 
 		var want := move_speed
 		if is_attacking:
 			want *= attack_move_scale
-		var target_vel := dir * want
+		# 摇杆轻推慢走：速度随推杆幅度缩放
+		var target_vel := dir * want * absf(axis)
 		velocity.x = move_toward(velocity.x, target_vel.x, accel * delta)
-		velocity.z = move_toward(velocity.z, target_vel.z, accel * delta)
-		_play_locomotion_anim(true, want)
+		_play_locomotion_anim(true, want * absf(axis))
 	else:
 		velocity.x = move_toward(velocity.x, 0.0, friction * delta)
-		velocity.z = move_toward(velocity.z, 0.0, friction * delta)
 		_play_locomotion_anim(false, 0.0)
+
+	# 纵深锁定：走道外的 Z 分量一律归零（横版）
+	velocity.z = move_toward(velocity.z, 0.0, friction * delta)
 
 	# 攻击/闪避期间不打断动作
 	if is_attacking or is_dodging:

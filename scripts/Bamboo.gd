@@ -1,21 +1,27 @@
 extends Node3D
-## 《定风波》竹林生成 —— 燕云式「高密度 + 三层纵深」
-## 关键：不是随机撒点，而是分层 ——
-##   近景（玩家可穿行，有碰撞） / 中景（密，构成视觉墙） / 远景（稀+大，被雾吃掉）
-## 用 MultiMeshInstance3D 保证手机上万个竹节仍是一个 draw call
+## 《定风波》竹林生成 —— 横版「水墨长卷」式布局
+##
+## 横版改造后的空间语言（Z 轴即画卷纵深）：
+##   z ∈ [-3.2, +3.2]   走道（玩家与敌人的横版战场，全程留空）
+##   z ∈ [-16, -5.5]    背景密林（构成画面主体，无碰撞）
+##   z ∈ [-42, -16]     远林（被雾吃掉大半，只留轮廓）
+##   z ∈ [+3.6, +5.6]   走道近侧零星竹（有碰撞，触手可及增加层次）
+##   z ∈ [+6.5, +9.0]   前景修竹（更稀更高，从镜头前掠过 —— 长卷的"近景压角"）
+## 相机固定在 z ≈ +9.5 的外侧（见 Camera.gd），前景竹故意放稀就是给镜头让路。
 
 @export_group("规模")
-@export var near_count: int = 110
-@export var mid_count: int = 380
-@export var far_count: int = 620
+@export var side_near_count: int = 90   # 走道近侧（有碰撞）
+@export var bg_mid_count: int = 420     # 背景密林
+@export var far_count: int = 560        # 远林
+@export var fg_front_count: int = 22    # 前景修竹
 
 @export_group("布局")
-@export var near_radius: float = 26.0
-@export var mid_radius_min: float = 24.0
-@export var mid_radius_max: float = 58.0
-@export var far_radius_min: float = 54.0
-@export var far_radius_max: float = 130.0
-@export var clear_radius: float = 7.5
+@export var lane_half: float = 3.2      # 走道半宽
+@export var x_extent: float = 140.0     # 横向铺开范围（±m）
+@export var side_near_z: Vector2 = Vector2(3.6, 5.6)
+@export var bg_mid_z: Vector2 = Vector2(-16.0, -5.5)
+@export var far_z: Vector2 = Vector2(-42.0, -16.0)
+@export var fg_front_z: Vector2 = Vector2(6.5, 9.0)
 
 @export_group("造型")
 @export var height_min: float = 7.0
@@ -38,9 +44,10 @@ func _ready() -> void:
 	_leaf_mesh = _mk_leaf_mesh()
 
 	var t0 := Time.get_ticks_msec()
-	_place_layer("near", near_count, near_radius * 0.32, near_radius, true)
-	_place_layer("mid", mid_count, mid_radius_min, mid_radius_max, false)
-	_place_layer("far", far_count, far_radius_min, far_radius_max, false)
+	_place_layer("side_near", side_near_count, side_near_z, true, 1.0)
+	_place_layer("bg_mid", bg_mid_count, bg_mid_z, false, 1.0)
+	_place_layer("far", far_count, far_z, false, 1.22)
+	_place_layer("fg_front", fg_front_count, fg_front_z, false, 1.18)
 
 	var leaf_total := _leaf_xforms.size()
 
@@ -49,8 +56,8 @@ func _ready() -> void:
 		_commit_leaf_multimesh()
 
 	var dt := Time.get_ticks_msec() - t0
-	print("[竹林] 构建完成 | 竹竿实例:%d | 叶片实例:%d | 耗时:%dms" % [
-		near_count + mid_count + far_count, leaf_total, dt])
+	print("[竹林] 横卷构建完成 | 竹竿实例:%d | 叶片实例:%d | 耗时:%dms" % [
+		side_near_count + bg_mid_count + far_count + fg_front_count, leaf_total, dt])
 
 func _mk_leaf_mesh() -> PlaneMesh:
 	var lm := PlaneMesh.new()
@@ -91,7 +98,8 @@ func _build_materials() -> void:
 	leaf.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
 	_mats["leaf"] = leaf
 
-func _place_layer(layer: String, count: int, r_min: float, r_max: float, collide: bool) -> void:
+## 高度倍率 height_mul：远林/前景竹更高，走道旁竹稍矮 —— 层次感
+func _place_layer(layer: String, count: int, z_range: Vector2, collide: bool, height_mul: float) -> void:
 	if count <= 0:
 		return
 
@@ -107,11 +115,8 @@ func _place_layer(layer: String, count: int, r_min: float, r_max: float, collide
 	var xforms: Array[Transform3D] = []
 
 	for i in count:
-		var pos := _scatter(r_min, r_max)
-		var h := _rng.randf_range(height_min, height_max)
-		# 远景竹子更高更细，制造"看不到顶"的压迫感
-		if layer == "far":
-			h *= 1.22
+		var pos := _scatter_rect(x_extent, z_range)
+		var h := _rng.randf_range(height_min, height_max) * height_mul
 		var tilt := Vector3(
 			_rng.randf_range(-lean_max, lean_max),
 			_rng.randf_range(0.0, TAU),
@@ -198,15 +203,14 @@ func _collect_leaves(base: Transform3D, top_y: float, h: float) -> void:
 			var leaf_basis := Basis.from_euler(lr).scaled(Vector3(s, s, s))
 			_leaf_xforms.append(cluster_t * Transform3D(leaf_basis, lp))
 
-func _scatter(r_min: float, r_max: float) -> Vector3:
-	# 环形撒点，保证中心留白（玩家活动区不被竹根塞住）
-	for attempt in 24:
-		var a := _rng.randf_range(0.0, TAU)
-		var r := sqrt(_rng.randf_range(r_min * r_min, r_max * r_max))
-		var p := Vector3(cos(a) * r, 0.0, sin(a) * r)
-		if p.length() > clear_radius:
-			return p
-	return Vector3(r_max, 0.0, 0.0)
+## 横卷矩形撒点：X 均匀铺开，Z 在指定带内随机 ——
+## 替换旧版"环形撒点"：横版战场是走廊，不是圆形竞技场
+func _scatter_rect(x_half: float, z_range: Vector2) -> Vector3:
+	return Vector3(
+		_rng.randf_range(-x_half, x_half),
+		0.0,
+		_rng.randf_range(minf(z_range.x, z_range.y), maxf(z_range.x, z_range.y))
+	)
 
 func _add_collider(pos: Vector3, h: float) -> void:
 	var body := StaticBody3D.new()

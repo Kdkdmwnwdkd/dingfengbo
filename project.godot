@@ -20,21 +20,21 @@ buses/default_bus_layout=""
 
 [display]
 
-; 竖屏视口 720×1280（9:16）。之前是 1280×720 横屏比例，
-; 配合 stretch/aspect="expand" 时竖屏下会左右留白/构图错位。
-window/size/viewport_width=720
-window/size/viewport_height=1280
+; 横屏 1280×720（16:9）—— 横版动作游戏必须横屏：
+; 竖屏下横向可视宽度不够装下一次进退，角色要么太小要么看不到敌人。
+; 配合 stretch/aspect="expand" 在不同手机上自适应。
+window/size/viewport_width=1280
+window/size/viewport_height=720
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
-; 屏幕方向：1 = PORTRAIT（竖屏）。
-; 注意 Godot 的取值不是「0横1竖」这么直白，它对应 DisplayServer::ScreenOrientation：
+; 屏幕方向：0 = LANDSCAPE（横屏）。
+; 注意 Godot 取值对应 DisplayServer::ScreenOrientation：
 ;   0=LANDSCAPE 1=PORTRAIT 2=REVERSE_LANDSCAPE 3=REVERSE_PORTRAIT
 ;   4=SENSOR 5=SENSOR_LANDSCAPE 6=SENSOR_PORTRAIT
-; 导出器会把它翻成 Android 的 screenOrientation 写进 manifest。
-; 已实测导出并解包 APK 校验：screenOrientation=1（SCREEN_ORIENTATION_PORTRAIT）✅
-window/handheld/orientation=1
-; 必须为 false：为 true 时 Android 的 resizeableActivity 会是 true，
-; 分屏/折叠屏/自由窗口下系统会【无视】screenOrientation，游戏就会被拉成横屏。
+; SENSOR_LANDSCAPE(5) 更友好，但部分老 Android 设备导出器会翻成 screenOrientation=6 反而错乱 —— 保守用 0。
+window/handheld/orientation=0
+; 必须为 false：为 true 时 Android resizeableActivity 会是 true，
+; 分屏/折叠屏下系统会无视 screenOrientation。
 window/size/resizable=false
 
 [input]

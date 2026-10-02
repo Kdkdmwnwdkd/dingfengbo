@@ -2,11 +2,14 @@ extends CanvasLayer
 ## 《定风波》HUD —— 燕云式：描边字 + 半透明暗色面板 + 极简
 ## 同时承载手机端虚拟摇杆与动作按钮
 
-@export var joystick_radius: float = 74.0
-@export var button_radius: float = 46.0
-@export var joystick_anchor: Vector2 = Vector2(0.155, 0.74)
-@export var attack_anchor: Vector2 = Vector2(0.855, 0.72)
-@export var dodge_anchor: Vector2 = Vector2(0.715, 0.845)
+@export_group("布局（横屏 1280×720 基准）")
+## 半径留 0 作为占位 —— _ready() 里按屏幕短边自适应重算，
+## 保证不同分辨率的手机上摇杆/按钮占屏比例一致
+@export var joystick_radius: float = 0.0
+@export var button_radius: float = 0.0
+@export var joystick_anchor: Vector2 = Vector2(0.115, 0.76)
+@export var attack_anchor: Vector2 = Vector2(0.885, 0.72)
+@export var dodge_anchor: Vector2 = Vector2(0.775, 0.85)
 
 var _joy_id: int = -1
 var _joy_center: Vector2
@@ -29,7 +32,15 @@ const CRIMSON := Color(0.706, 0.196, 0.180)
 const PANEL_BG := Color(0.055, 0.063, 0.071, 0.52)
 
 func _ready() -> void:
+	_fit_radii()
 	ensure_built()
+
+## 按屏幕短边自适应控件尺寸 —— 横屏/平板/高分屏下按钮不缩成瓜子
+func _fit_radii() -> void:
+	var vp := Vector2(get_viewport().get_visible_rect().size)
+	var short_edge := minf(vp.x, vp.y)
+	joystick_radius = short_edge * 0.115
+	button_radius = short_edge * 0.082
 
 ## 幂等构建入口。
 ## World.gd 也会调它，用来兜底「脚本是 set_script 补挂的、_ready() 没触发」的情况。

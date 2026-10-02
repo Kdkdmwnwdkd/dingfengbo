@@ -20,6 +20,12 @@ uniform float rim_power : hint_range(0.0, 8.0) = 3.2;
 uniform float rim_strength : hint_range(0.0, 2.0) = 0.62;
 uniform vec3 rim_color : source_color = vec3(1.0, 0.86, 0.68);
 uniform float ink_darken : hint_range(0.0, 1.0) = 0.16;
+// —— 侠客调色（横版新增）——
+// KayKit 素材是高饱和卡通色，直接上水墨色带会像塑料玩具。
+// desaturate 先压掉饱和度，cloth_tint 再罩主色调：
+// 玩家传月白 → 白衣侠客；敌人传暗褐 → 玄甲刀客
+uniform float desaturate : hint_range(0.0, 1.0) = 0.0;
+uniform vec3 cloth_tint : source_color = vec3(1.0, 1.0, 1.0);
 // 由 World.gd 在运行时注入主光方向（世界空间，指向光源）
 // 不用内建 LIGHT_DIRECTION：它在 vertex 阶段不保证可用，显式注入最稳
 uniform vec3 sun_dir = vec3(0.55, 0.62, -0.56);
@@ -39,6 +45,10 @@ void vertex() {
 void fragment() {
 	vec3 tex = texture(albedo_tex, UV).rgb;
 	vec3 base = tex * ink_tint;
+
+	// 侠客调色：去饱和（压掉卡通塑料感）再罩主色 —— 月白 / 玄褐
+	float luma = dot(base, vec3(0.299, 0.587, 0.114));
+	base = mix(base, vec3(luma), desaturate) * cloth_tint;
 
 	// 硬阶色带：把连续光照明暗量化成 N 阶（墨分五色）
 	float ndl = v_ndl;
