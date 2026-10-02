@@ -27,9 +27,21 @@ var _player: Node3D
 var _flash: float = 0.0
 var _rng := RandomNumberGenerator.new()
 
-@onready var anim: AnimationPlayer = $ModelRoot/AnimationPlayer
 @onready var model_root: Node3D = $ModelRoot
 @onready var _body_mesh: Node3D = $ModelRoot
+## 同 Player：递归查找动画机，不写死路径，保持 glb 原始层级
+@onready var anim: AnimationPlayer = _find_anim_player(model_root)
+
+func _find_anim_player(n: Node) -> AnimationPlayer:
+	if n == null:
+		return null
+	if n is AnimationPlayer:
+		return n as AnimationPlayer
+	for c in n.get_children():
+		var r := _find_anim_player(c)
+		if r != null:
+			return r
+	return null
 
 const ANIM_IDLE := "Idle"
 const ANIM_WALK := "Walking_A"

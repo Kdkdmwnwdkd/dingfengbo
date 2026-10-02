@@ -43,9 +43,23 @@ var facing: Vector3 = Vector3.FORWARD
 var _want_attack: bool = false
 var _want_dodge: bool = false
 
-@onready var anim: AnimationPlayer = $ModelRoot/AnimationPlayer
 @onready var model_root: Node3D = $ModelRoot
+## 递归查找动画机，而不是写死 "$ModelRoot/AnimationPlayer"。
+## glb 自带的 AnimationPlayer 必须留在原层级，否则动画轨道
+## （"Rig/Skeleton3D:xxx" 这类相对路径）会全部解析失败、骨架塌缩成方块。
+@onready var anim: AnimationPlayer = _find_anim_player(model_root)
 @onready var _env: WorldEnvironment = get_tree().get_first_node_in_group("world_env")
+
+func _find_anim_player(n: Node) -> AnimationPlayer:
+	if n == null:
+		return null
+	if n is AnimationPlayer:
+		return n as AnimationPlayer
+	for c in n.get_children():
+		var r := _find_anim_player(c)
+		if r != null:
+			return r
+	return null
 
 const ANIM_IDLE := "Idle"
 const ANIM_WALK := "Walking_A"

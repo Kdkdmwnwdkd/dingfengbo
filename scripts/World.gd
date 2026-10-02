@@ -360,21 +360,15 @@ func _build_body(glb: String, char_name: String, col_radius: float, col_height: 
 func _spawn_player() -> void:
 	var body := _build_body(PLAYER_CHARACTER_GLB, "Player", 0.34, 1.72, 0.86)
 	body.set_script(load("res://scripts/Player.gd"))
-	# 把脚本里的 @onready 依赖挂到正确路径
+
+	# ⚠️ 绝对不要搬动 glb 里自带的 AnimationPlayer！
+	# 动画轨道的路径（如 "Rig/Skeleton3D:root"）是【相对于 AnimationPlayer 自身】写的。
+	# 一旦把它挪到别的父节点下，所有骨骼轨道都会解析失败 →
+	# 骨骼被归零 → 角色塌缩成一坨方块（就是之前"主角变绿色方块"的真凶）。
+	# 正确做法：保持 glb 原始结构不动，让 Player.gd 自己递归找到动画机。
 	var mr := body.get_node("ModelRoot")
-	var ap := _find_anim_player(mr)
-	if ap == null:
-		ap = AnimationPlayer.new()
-		ap.name = "AnimationPlayer"
-		mr.add_child(ap)
-	else:
-		var old_parent := ap.get_parent()
-		if old_parent != mr:
-			# 先解除 owner 再搬家，否则引擎会报 owner inconsistent
-			ap.owner = null
-			old_parent.remove_child(ap)
-			mr.add_child(ap)
-	ap.name = "AnimationPlayer"
+	if _find_anim_player(mr) == null:
+		push_warning("[定风波] Player 模型里没有 AnimationPlayer，将只能静态站立")
 
 	body.position = Vector3(0.0, 0.1, 0.0)
 	add_child(body)
@@ -420,15 +414,11 @@ func _spawn_enemies() -> void:
 	for i in enemy_count:
 		var body := _build_body(ENEMY_CHARACTER_GLB, "Enemy_%d" % (i + 1), 0.36, 1.8, 0.9)
 		body.set_script(load("res://scripts/Enemy.gd"))
+		# 同 Player：不搬 AnimationPlayer，保持 glb 原始层级，
+		# 否则动画轨道 "Rig/Skeleton3D:xxx" 解析不到，敌人也会塌缩成方块。
 		var mr := body.get_node("ModelRoot")
-		var ap := _find_anim_player(mr)
-		if ap == null:
-			ap = AnimationPlayer.new()
-			mr.add_child(ap)
-		elif ap.get_parent() != mr:
-			ap.get_parent().remove_child(ap)
-			mr.add_child(ap)
-		ap.name = "AnimationPlayer"
+		if _find_anim_player(mr) == null:
+			push_warning("[定风波] Enemy_%d 模型里没有 AnimationPlayer" % (i + 1))
 
 		# 出生角度均匀分布；并且刻意避开玩家正后方 ±55°，
 		# 否则开局第一个敌人会正好卡在相机与玩家之间，糊住整个屏幕。
