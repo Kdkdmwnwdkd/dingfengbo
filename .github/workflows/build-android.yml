@@ -56,14 +56,16 @@ jobs:
           ls "$TPL_DIR" | head -10
           godot --version
 
-      - name: 生成调试签名
+      - name: 安装固定调试签名
         run: |
-          # 放在 $HOME 下，路径与 export_presets.cfg 中的 keystore/debug 对应
-          keytool -keyalg RSA -genkeypair -alias androiddebugkey \
-            -keypass android -keystore "$HOME/debug.keystore" -storepass android \
-            -dname "CN=Android Debug,O=Android,C=US" -validity 9999 \
-            -deststoretype pkcs12
+          # 【重要】用仓库里固定的 keystore，不要每次重新生成！
+          # 每次生成新密钥 = 每次签名指纹都不同 = 安卓认为这是"另一个应用"，
+          # 结果是没法覆盖安装，用户每次升级都得先卸载。
+          # debug 密钥本就不保密（密码就是公开的 android），所以直接入库。
+          cp .github/debug.keystore "$HOME/debug.keystore"
           ls -la "$HOME/debug.keystore"
+          echo "--- 签名指纹（每次构建都应是同一串）---"
+          keytool -list -v -keystore "$HOME/debug.keystore" -storepass android 2>/dev/null | grep -E "SHA1|SHA256" | head -2
 
       - name: 配置 Godot 编辑器设置（关键！）
         run: |
@@ -109,6 +111,16 @@ jobs:
           cp .github/export_presets.cfg export_presets.cfg
           # keystore 绝对路径按当前 runner 的 $HOME 实际值替换
           sed -i "s|/home/runner/debug.keystore|$HOME/debug.keystore|g" export_presets.cfg
+
+          # 把真实版本号写进 APK 内部（安卓系统读这两项）
+          #   version/code —— 必须是整数，安卓用它判断「是否新版本」，每次构建递增
+          #   version/name —— 显示给用户看的字符串，和 Release 标签保持一致
+          # 不写这一步，APK 里永远是写死的 1 / "1.0"，装完只会显示 1.0
+          sed -i "s|^version/code=.*|version/code=${{ github.run_number }}|" export_presets.cfg
+          sed -i "s|^version/name=.*|version/name=\"1.0.${{ github.run_number }}\"|" export_presets.cfg
+          echo "--- 本次版本号 ---"
+          grep -E "^version/" export_presets.cfg
+          echo "--- 签名与路径 ---"
           grep -E "keystore/debug|export_path" export_presets.cfg
 
       - name: 导入工程（首次导入生成 .godot 缓存）

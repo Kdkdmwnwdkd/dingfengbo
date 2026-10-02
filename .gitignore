@@ -6,9 +6,12 @@
 build/
 export/
 
-# 本地签名文件，绝不入库
+# 本地签名文件不入库……
 *.keystore
 *.jks
+# ……但 CI 用的固定调试签名必须入库，
+# 否则每次构建都重新生成密钥，签名指纹一变就无法覆盖安装。
+!.github/debug.keystore
 
 # 系统垃圾
 .DS_Store
