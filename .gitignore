@@ -1,0 +1,15 @@
+# Godot 4 编辑器缓存与导入产物（由每台机器本地生成，不进版本库）
+.godot/
+*.translation
+
+# 导出产物
+build/
+export/
+
+# 本地签名文件，绝不入库
+*.keystore
+*.jks
+
+# 系统垃圾
+.DS_Store
+Thumbs.db
