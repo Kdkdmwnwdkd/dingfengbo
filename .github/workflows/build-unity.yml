@@ -13,11 +13,94 @@ env:
   PROJECT_PATH: .
 
 jobs:
-  build:
-    name: Build Android APK
+  # ============ 自检模式:无 Unity License 时跑 ============
+  selfcheck:
+    name: Self-check (no Unity license)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    if: ${{ !vars.UNITY_LICENSE && !secrets.UNITY_LICENSE }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
+      - name: List project structure
+        run: |
+          echo "=== 项目结构 ==="
+          find . -type f -not -path './.git/*' -not -path './archive/*' | head -50
+          echo ""
+          echo "=== C# 脚本数 ==="
+          find ./Assets -name "*.cs" | wc -l
+          echo ""
+          echo "=== ProjectVersion ==="
+          cat ProjectSettings/ProjectVersion.txt 2>/dev/null || echo "(missing)"
+          echo ""
+          echo "=== Packages ==="
+          cat Packages/manifest.json 2>/dev/null | head -40 || echo "(missing)"
+
+      - name: C# 语法自检(基础括号配对)
+        run: |
+          echo "=== C# 文件基础检查 ==="
+          for f in $(find ./Assets -name "*.cs"); do
+            opens=$(grep -c '{' "$f" || echo 0)
+            closes=$(grep -c '}' "$f" || echo 0)
+            if [ "$opens" != "$closes" ]; then
+              echo "❌ $f: 大括号不配对 (opens=$opens, closes=$closes)"
+              exit 1
+            fi
+          done
+          echo "✅ 所有 C# 文件大括号配对正常"
+
+      - name: Android Manifest 检查
+        run: |
+          if [ -f "./Assets/Plugins/Android/AndroidManifest.xml" ]; then
+            if grep -q 'android:screenOrientation="landscape"' ./Assets/Plugins/Android/AndroidManifest.xml; then
+              echo "✅ AndroidManifest 已配置 landscape 横屏"
+            else
+              echo "❌ AndroidManifest 缺少 landscape 配置"
+              exit 1
+            fi
+          else
+            echo "❌ AndroidManifest.xml 不存在"
+            exit 1
+          fi
+
+      - name: 输出 Unity License 配置指引
+        run: |
+          echo "=================================================="
+          echo "📋 当前 CI 处于「自检模式」"
+          echo "=================================================="
+          echo ""
+          echo "原因:仓库尚未配置 UNITY_LICENSE secret"
+          echo ""
+          echo "要切到「真构建模式」生成 APK,请配置以下 secrets:"
+          echo ""
+          echo "1. UNITY_LICENSE (必需) - 获取方式:"
+          echo "   a. 安装 Unity Hub: https://unity.com/download"
+          echo "   b. 注册 Unity ID 并登录"
+          echo "   c. 装 Unity 6000.0 LTS 模块"
+          echo "   d. 访问 https://license.unity3d.com/manual 生成 license"
+          echo "   e. 下载的 .ulf 文件内容整个粘贴到 GitHub Secret"
+          echo ""
+          echo "2. Android 签名(可选,不配也能出 debug APK):"
+          echo "   - ANDROID_KEYSTORE_NAME"
+          echo "   - ANDROID_KEYSTORE_BASE64"
+          echo "   - ANDROID_KEYSTORE_PASS"
+          echo "   - ANDROID_KEYALIAS_NAME"
+          echo "   - ANDROID_KEYALIAS_PASS"
+          echo ""
+          echo "GitHub 仓库 → Settings → Secrets and variables → Actions → New repository secret"
+          echo ""
+          echo "配置完成后,push 任意改动或打 tag 触发 CI,即可自动构建 APK"
+
+      - name: Self-check passed
+        run: echo "✅ 项目自检通过,等待 Unity License 配置后切到真构建"
+
+  # ============ 真构建模式:有 Unity License 时跑 ============
+  build:
+    name: Build Android APK (Unity)
+    runs-on: ubuntu-latest
+    if: ${{ vars.UNITY_LICENSE != '' || secrets.UNITY_LICENSE != '' }}
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,7 +121,6 @@ jobs:
 
       - name: Free disk space
         run: |
-          echo "清出空间"
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/lib/node_modules 2>/dev/null || true
           df -h /
 
@@ -56,7 +138,6 @@ jobs:
           androidKeyaliasName: ${{ secrets.ANDROID_KEYALIAS_NAME }}
           androidKeyaliasPass: ${{ secrets.ANDROID_KEYALIAS_PASS }}
           allowDirtyBuild: true
-          # 没有 license 时用 personal,需要 secrets.UNITY_EMAIL/PASSWORD 或 UNITY_LICENSE
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
 
