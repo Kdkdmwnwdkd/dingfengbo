@@ -50,7 +50,7 @@ const ANIM_CANDIDATES := {
 	"idle":   ["Idle", "idle", "IDLE", "Standing", "Stand"],
 	"walk":   ["Walking_A", "Walk", "walk", "Walking", "WalkForward"],
 	"run":    ["Running_A", "Run", "run", "Running", "RunForward"],
-	"attack": ["1H_Melee_Attack_Chop", "1H_Melee_Attack_Slice_Horizontal", "Attack", "Attack01", "Slash", "attack"],
+	"attack": ["1H_Melee_Attack_Chop", "1H_Melee_Attack_Slice_Horizontal", "Attack", "Attack01", "Slash", "attack", "Punch"],
 	"hurt":   ["Hit_A", "Hit", "Hurt", "Damage", "GetHit", "hit"],
 	"death":  ["Death_A", "Death", "Die", "Dead", "death"],
 }
