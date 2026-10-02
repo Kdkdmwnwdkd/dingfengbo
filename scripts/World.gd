@@ -266,7 +266,9 @@ func _apply_character_shader(root: Node) -> void:
 			mi.set_surface_override_material(0, mat)
 			# 角色需要投影，才有燕云那种落地硬阴影
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-		_apply_character_shader(child)
+		else:
+			# 只对非网格节点继续下钻（递归放在 else 里，避免网格被重复处理）
+			_apply_character_shader(child)
 
 ## 生成 N 阶硬色带贴图 —— 水墨「墨分五色」的技术实现
 func _make_gradient_texture(steps: int) -> GradientTexture1D:
@@ -286,33 +288,49 @@ func _make_gradient_texture(steps: int) -> GradientTexture1D:
 	tex.gradient = g
 	return tex
 
-## 反向外壳描边：复制一份网格、放大、翻面、只画背面
+## 反向外壳描边：给每个带蒙皮的 MeshInstance3D 原地加一个「兄弟外壳」。
+##
+## 为什么不用「整棵复制」的老写法：
+##   glb 里 mesh 的 skeleton 存的是【相对路径】（如 ".."，即父节点 Skeleton3D）。
+##   把网格复制到另一个层级的节点树下，这个相对路径就解析不到了 ——
+##   外壳会永远停在 rest pose，与动画后的本体错位，糊成一坨巨大的黑块。
+##
+## 现在的做法：外壳挂在【与源网格完全相同的父节点】下，作为兄弟节点。
+## 相对路径不变 → skeleton 解析正常 → 描边严丝合缝跟着动画走。
 func _add_outline_shell(root: Node) -> void:
 	var shader := load(OUTLINE_SHADER)
 	if shader == null:
 		return
-	var shell := _build_shell_recursive(root, shader)
-	shell.name = "OutlineShell"
-	root.add_child(shell)
+	_wrap_meshes(root, shader)
 
-func _build_shell_recursive(src: Node, shader: Shader) -> Node3D:
-	var out := Node3D.new()
-	out.name = src.name + "_Outline"
-	if src is Node3D:
-		out.transform = (src as Node3D).transform
-	for child in src.get_children():
+func _wrap_meshes(n: Node, shader: Shader) -> void:
+	for child in n.get_children():
 		if child is MeshInstance3D:
 			var mi := child as MeshInstance3D
 			var sm := MeshInstance3D.new()
+			sm.name = mi.name + "_Outline"
 			sm.mesh = mi.mesh
-			var mat := ShaderMaterial.new()
-			mat.shader = shader
-			sm.material_override = mat
+			sm.transform = mi.transform
+			# 关键：skeleton 是相对路径，必须保持在同一父节点下才能解析
+			sm.skeleton = mi.skeleton
+			sm.skin = mi.skin
+			sm.material_override = _outline_material(shader)
 			sm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			out.add_child(sm)
-		elif child is Node3D:
-			out.add_child(_build_shell_recursive(child, shader))
-	return out
+			# 插到源网格后面，作为兄弟
+			n.add_child(sm)
+			if n is Node3D:
+				sm.owner = null
+		else:
+			_wrap_meshes(child, shader)
+
+func _outline_material(shader: Shader) -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = shader
+	# 角色 glb 在导入期被 root_scale 放大了，外壳继承同一缩放，
+	# 于是 shader 里的 outline_width 也会被等比放大，描边会糊成一圈黑。
+	# 这里按缩放倒数补偿，让屏幕上看到的线宽保持稳定。
+	mat.set_shader_parameter("outline_width", 0.011 / 1.49)
+	return mat
 
 func _fallback_body(char_name: String) -> Node3D:
 	var root := Node3D.new()
@@ -336,6 +354,14 @@ func _find_anim_player(root: Node) -> AnimationPlayer:
 		if r:
 			return r
 	return null
+
+## ⚠️ 角色缩放不要在这里做！
+## 直接给 SkinnedMesh 的父节点设 scale，会破坏骨骼蒙皮绑定 ——
+## 表现为"头大身子小"的畸形（已实测复现）。
+## 正确做法：改 glb 的【导入设置】nodes/root_scale，让 Godot 在导入期
+## 一次性缩放骨架+网格，蒙皮完全不受影响。
+## 本工程的 Rogue_Hooded.glb / Knight.glb 都已在 .import 里设为 1.49。
+const CHARACTER_SCALE := 1.0
 
 func _build_body(glb: String, char_name: String, col_radius: float, col_height: float, col_y: float) -> Node:
 	var body := CharacterBody3D.new()
@@ -374,16 +400,30 @@ func _spawn_player() -> void:
 	add_child(body)
 	_player = body as CharacterBody3D
 
+## ⚠️⚠️ 血的教训：绝不要对【已经在场景树里】的节点调用 set_script()。
+##
+## Godot 的 _ready() 只在节点「进入场景树」的那一次触发。
+## Main.tscn 里预置的 Camera / HUD / CombatDirector 在场景加载时就跑完了 _ready()（那时还没脚本），
+## 之后 World.gd 再 set_script() 换上脚本 —— Godot 不会为它重新触发 _ready()。
+## 后果（实测确认）：
+##   · HUD.gd   的 _ready() 没跑 → 摇杆/按钮【从未被创建】→ 手机上完全动不了
+##   · Camera.gd 的 _ready() 没跑 → fov 停在默认 75、near 0.05、far 4000 → 视野过广、人显小
+##   · CombatDirector.gd 的 _ready() 没跑 → 攻击信号没接上 → 打不中敌人
+##
+## 正确做法：脚本直接写在 Main.tscn 里，节点加载时自带脚本，_ready() 自然触发。
+## 下方各 _setup_* 只负责「注入依赖」，不再负责「挂脚本」。
+
 func _setup_camera() -> void:
 	_camera = get_node_or_null("Camera") as Camera3D
 	if _camera == null:
-		_camera = Camera3D.new()
-		_camera.name = "Camera"
-		add_child(_camera)
-	_camera.set_script(load("res://scripts/Camera.gd"))
-	# 挂上脚本后立刻显式注入目标。
-	# 注意：不能依赖 set("target_path", ...) —— 在脚本挂载前那是写给一个不存在的属性，
-	# 挂载后 Godot 不会把它当作 @export 的值读回来，相机就会 target=null 卡死。
+		push_error("[定风波] 场景里找不到 Camera 节点")
+		return
+	if _camera.get_script() == null:
+		# 兜底：真丢了脚本才补挂，并等一帧让 _ready() 有机会执行
+		_camera.set_script(load("res://scripts/Camera.gd"))
+		await get_tree().process_frame
+	# 显式注入跟随目标。Camera.gd 自己的 _ready() 里也会尝试解析，
+	# 但那时玩家可能还没 add_child，所以这里必须再调一次 setup()。
 	if _camera.has_method("setup"):
 		_camera.call("setup", _player)
 	else:
@@ -392,18 +432,25 @@ func _setup_camera() -> void:
 func _setup_hud() -> void:
 	_hud = get_node_or_null("HUD") as CanvasLayer
 	if _hud == null:
-		_hud = CanvasLayer.new()
-		_hud.name = "HUD"
-		add_child(_hud)
-	_hud.set_script(load("res://scripts/HUD.gd"))
+		push_error("[定风波] 场景里找不到 HUD 节点")
+		return
+	if _hud.get_script() == null:
+		_hud.set_script(load("res://scripts/HUD.gd"))
+		await get_tree().process_frame
+	# HUD 的摇杆/按钮在 _ready() 里创建；万一没跑（老场景文件），手动补建一次
+	if _hud.has_method("ensure_built"):
+		_hud.call("ensure_built")
 
 func _setup_combat() -> void:
 	var cd := get_node_or_null("CombatDirector")
 	if cd == null:
-		cd = Node.new()
-		cd.name = "CombatDirector"
-		add_child(cd)
-	cd.set_script(load("res://scripts/CombatDirector.gd"))
+		push_error("[定风波] 场景里找不到 CombatDirector 节点")
+		return
+	if cd.get_script() == null:
+		cd.set_script(load("res://scripts/CombatDirector.gd"))
+		await get_tree().process_frame
+	if cd.has_method("ensure_bound"):
+		cd.call("ensure_bound")
 
 # ---------------- 敌人 ----------------
 func _spawn_enemies() -> void:

@@ -20,11 +20,22 @@ buses/default_bus_layout=""
 
 [display]
 
-window/size/viewport_width=1280
-window/size/viewport_height=720
+; 竖屏视口 720×1280（9:16）。之前是 1280×720 横屏比例，
+; 配合 stretch/aspect="expand" 时竖屏下会左右留白/构图错位。
+window/size/viewport_width=720
+window/size/viewport_height=1280
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+; 屏幕方向：1 = PORTRAIT（竖屏）。
+; 注意 Godot 的取值不是「0横1竖」这么直白，它对应 DisplayServer::ScreenOrientation：
+;   0=LANDSCAPE 1=PORTRAIT 2=REVERSE_LANDSCAPE 3=REVERSE_PORTRAIT
+;   4=SENSOR 5=SENSOR_LANDSCAPE 6=SENSOR_PORTRAIT
+; 导出器会把它翻成 Android 的 screenOrientation 写进 manifest。
+; 已实测导出并解包 APK 校验：screenOrientation=1（SCREEN_ORIENTATION_PORTRAIT）✅
 window/handheld/orientation=1
+; 必须为 false：为 true 时 Android 的 resizeableActivity 会是 true，
+; 分屏/折叠屏/自由窗口下系统会【无视】screenOrientation，游戏就会被拉成横屏。
+window/size/resizable=false
 
 [input]
 

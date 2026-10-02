@@ -21,12 +21,23 @@ var _hp_label: Label
 var _combo_label: Label
 var _hint: Label
 
+var _built: bool = false
+
 const INK := Color(0.086, 0.094, 0.106)
 const PAPER := Color(0.847, 0.827, 0.780)
 const CRIMSON := Color(0.706, 0.196, 0.180)
 const PANEL_BG := Color(0.055, 0.063, 0.071, 0.52)
 
 func _ready() -> void:
+	ensure_built()
+
+## 幂等构建入口。
+## World.gd 也会调它，用来兜底「脚本是 set_script 补挂的、_ready() 没触发」的情况。
+## 重复调用安全 —— _built 守卫保证 UI 只建一次。
+func ensure_built() -> void:
+	if _built:
+		return
+	_built = true
 	layer = 10
 	_build_vignette()
 	_build_hp()

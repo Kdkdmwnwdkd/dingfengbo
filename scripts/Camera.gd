@@ -5,10 +5,13 @@ extends Camera3D
 
 @export_group("跟随")
 @export var target_path: NodePath
-@export var follow_lag: float = 6.5
-@export var look_lag: float = 8.5
-@export var offset: Vector3 = Vector3(0.55, 1.62, -3.05)
-@export var look_height: float = 1.28
+@export var follow_lag: float = 7.5
+@export var look_lag: float = 9.5
+## 越肩机位。主角身高 1.755m，机位高度取 ~1.62m（胸口偏上），
+## 距离 3.9m —— 实测角色占屏高约 42%，是当下主流手游第三人称动作游戏的手感。
+@export var offset: Vector3 = Vector3(0.5, 1.62, -3.9)
+## 视线落点高度：瞄准角色胸口，而不是脚下，否则会俯视、显得人更小
+@export var look_height: float = 1.15
 
 @export_group("动态")
 @export var shake_decay: float = 7.0
@@ -37,13 +40,15 @@ var _shake: float = 0.0
 var _smooth_pos: Vector3
 var _look_at: Vector3
 var _env: WorldEnvironment
-var _fov_base: float = 62.0
+## 55° 是第三人称动作游戏的常用取值。
+## 注意：Godot 的 Camera3D 默认 fov 是 75°，那是个广角，会把主角压得很小。
+## 所以 _ready() 里必须显式赋值 —— 而 _ready() 只有在「节点进树时脚本已挂好」才会跑，
+## 这正是在 Main.tscn 里直接挂 Camera.gd 的原因。
+var _fov_base: float = 55.0
 var _attrs: CameraAttributesPractical
 
 func _ready() -> void:
-	fov = _fov_base
-	near = 0.08
-	far = 620.0
+	_apply_base_settings()
 	_setup_attributes()
 	_env = get_tree().get_first_node_in_group("world_env")
 	# 优先用 setup() 显式注入的 target；其次才回退到 @export 的 target_path
@@ -52,9 +57,21 @@ func _ready() -> void:
 	else:
 		_snap_to_target()
 
-## 由 World.gd 在挂载脚本后立刻调用 —— 比依赖 @export 的 target_path 更可靠。
+## 基础参数一次性写死。抽成独立函数是为了让 World.gd 也能在必要时兜底调用，
+## 防止 _ready() 因时序问题没跑时 fov 卡在默认 75。
+func _apply_base_settings() -> void:
+	fov = _fov_base
+	near = 0.08
+	far = 620.0
+
+## 由 World.gd 在玩家生成后立刻调用 —— 比依赖 @export 的 target_path 更可靠。
 ## （动态 set("target_path") 在脚本挂载前是不生效的，那是写给了不存在的属性）
 func setup(t: Node3D) -> void:
+	# 兜底：_ready() 若因时序没跑到，这里把 fov/near/far 补上
+	if not is_equal_approx(fov, _fov_base):
+		_apply_base_settings()
+	if _attrs == null:
+		_setup_attributes()
 	target = t
 	target_path = get_path_to(t) if t else NodePath()
 	_snap_to_target()

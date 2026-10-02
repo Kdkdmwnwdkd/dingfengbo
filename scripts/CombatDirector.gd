@@ -6,12 +6,22 @@ extends Node
 @export var attack_arc_deg: float = 120.0
 
 var _player: Node3D
+var _bound: bool = false
 
 func _ready() -> void:
+	ensure_bound()
+
+## 幂等绑定入口 —— World.gd 的兜底调用点。
+## 老场景文件里若脚本是 set_script() 补挂的，_ready() 不会触发，就得靠这里补上。
+func ensure_bound() -> void:
+	if _bound:
+		return
+	_bound = true
 	await get_tree().process_frame
 	_player = get_tree().get_first_node_in_group("player")
 	if _player and _player.has_signal("attack_hit"):
-		_player.attack_hit.connect(_on_attack_hit)
+		if not _player.attack_hit.is_connected(_on_attack_hit):
+			_player.attack_hit.connect(_on_attack_hit)
 
 func _on_attack_hit(damage: int, facing: Vector3) -> void:
 	if _player == null or not is_instance_valid(_player):
