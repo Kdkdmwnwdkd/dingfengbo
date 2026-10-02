@@ -9,10 +9,11 @@ extends Node3D
 @export var enemy_count: int = 3
 @export var random_seed: int = 20261002
 
-# 玩家/敌人模型：回退 RobotExpressive（three.js CC0，14动画含 Punch/Death，确定能跑）
-# Asian_F 女性角色动画注入有不确定性，先回退保证"能动能看见"，待用户提供古风女侠 glb 再换
-const PLAYER_CHARACTER_GLB := "res://assets/characters/RobotExpressive.glb"
-const ENEMY_CHARACTER_GLB := "res://assets/characters/RobotExpressive.glb"
+# 玩家/敌人模型：RobotExpressive.gltf（three.js CC0，14动画，纯文本格式不受上传损坏影响）
+# 原因：二进制 glb 经上传通道被双重编码损坏（Godot 导入 valid=false → 兜底胶囊）
+# gltf 是 JSON 文本，推送通道安全；buffer 以 data URI 内嵌，Godot 4 原生支持
+const PLAYER_CHARACTER_GLB := "res://assets/characters/RobotExpressive.gltf"
+const ENEMY_CHARACTER_GLB := "res://assets/characters/RobotExpressive.gltf"
 const OUTLINE_SHADER := "res://shaders/ink_outline.gdshader"
 const CHAR_SHADER := "res://shaders/ink_character.gdshader"
 
@@ -31,6 +32,9 @@ var _hud: CanvasLayer
 var _env: WorldEnvironment
 
 func _ready() -> void:
+	# 运行时强制横屏（双保险）：部分 ROM 会忽略 AndroidManifest 的 screenOrientation，
+	# 引擎层再设一次 —— manifest + 运行时双通道锁横屏
+	DisplayServer.screen_set_orientation(DisplayServer.SCREEN_LANDSCAPE)
 	_rng.seed = random_seed
 	_env = get_node_or_null("Env")
 	if _env:
