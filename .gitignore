@@ -1,18 +1,54 @@
-# Godot 4 编辑器缓存与导入产物（由每台机器本地生成，不进版本库）
-.godot/
-*.translation
+# ============ Unity ============
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/MemoryCaptures/
+/[Rr]ecordings/
 
-# 导出产物
-build/
-export/
+# 构建产物
+*.apk
+*.aab
+*.ipa
+*.unitypackage
+*.symbol.zip
+/Build/
+/Builds/
 
-# 本地签名文件不入库……
-*.keystore
-*.jks
-# ……但 CI 用的固定调试签名必须入库，
-# 否则每次构建都重新生成密钥，签名指纹一变就无法覆盖安装。
-!.github/debug.keystore
+# Unity 资源
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.mdb
+*.opendb
+*.VC.db
+*.VS
 
-# 系统垃圾
+# IDE
+.vs/
+.vscode/
+.idea/
+*.DotSettings.user
+
+# OS
 .DS_Store
 Thumbs.db
+
+# 加密
+*.bin
+*.keystore
+!debug.keystore
+
+# ============ 旧 Godot ============
+*.import
+.godot/
